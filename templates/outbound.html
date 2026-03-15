@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Outbound Calls</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard-shell.css') }}">
+<style>
+.approval{
+margin-bottom:20px;
+padding:18px 20px;
+display:flex;
+justify-content:space-between;
+align-items:center;
+gap:16px;
+border-radius:22px;
+border:1px solid var(--shell-line);
+background:linear-gradient(135deg,rgba(16,32,61,0.94),rgba(20,36,63,0.72));
+}
+
+.approval.pending{
+border-color:rgba(245,158,11,0.3);
+background:linear-gradient(135deg,rgba(120,53,15,0.24),rgba(16,32,61,0.82));
+}
+
+.approval strong{
+display:block;
+margin-bottom:6px;
+}
+
+.approval p,
+.approval a{
+margin:0;
+color:var(--shell-muted);
+}
+
+.approval a{
+color:#dbeafe;
+font-weight:700;
+text-decoration:none;
+}
+
+.grid{
+display:grid;
+grid-template-columns:1.08fr 1.12fr;
+gap:20px;
+margin-bottom:20px;
+}
+
+.panel{
+padding:24px;
+}
+
+.panel h2{
+margin:0 0 8px;
+font-size:23px;
+}
+
+.subtext{
+margin:0 0 18px;
+color:var(--shell-muted);
+line-height:1.5;
+}
+
+label{
+display:block;
+margin-top:14px;
+margin-bottom:6px;
+font-size:14px;
+color:#cbd5e1;
+}
+
+input{
+width:100%;
+padding:12px;
+border-radius:12px;
+border:1px solid var(--shell-line);
+background:#091327;
+color:white;
+}
+
+input[type="file"]{
+padding:10px;
+}
+
+button{
+margin-top:18px;
+padding:12px 16px;
+width:100%;
+border:none;
+border-radius:12px;
+background:linear-gradient(135deg,#38bdf8,#0ea5e9);
+color:white;
+font-size:15px;
+font-weight:700;
+cursor:pointer;
+}
+
+.secondary-btn{
+background:linear-gradient(135deg,#22c55e,#16a34a);
+}
+
+.feedback{
+margin-top:14px;
+min-height:20px;
+font-size:14px;
+color:var(--shell-muted);
+}
+
+.feedback.success{
+color:#bbf7d0;
+}
+
+.feedback.error{
+color:#fecaca;
+}
+
+.sample{
+margin-top:16px;
+padding:16px;
+border-radius:16px;
+background:rgba(8,16,31,0.74);
+border:1px solid rgba(148,163,184,0.12);
+}
+
+.sample strong{
+display:block;
+margin-bottom:8px;
+}
+
+.sample code{
+display:block;
+color:#bae6fd;
+white-space:pre-wrap;
+line-height:1.6;
+}
+
+.table-card{
+overflow:hidden;
+}
+
+.table-head{
+padding:22px 24px 0;
+display:flex;
+justify-content:space-between;
+align-items:flex-start;
+gap:12px;
+}
+
+.table-head h2{
+margin:0 0 6px;
+font-size:22px;
+}
+
+.table-head p{
+margin:0;
+color:var(--shell-muted);
+}
+
+.meta{
+font-size:13px;
+color:var(--shell-muted);
+white-space:nowrap;
+}
+
+.table-wrap{
+padding:0 24px 24px;
+overflow:auto;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+margin-top:16px;
+}
+
+th,td{
+padding:14px 10px;
+text-align:left;
+border-bottom:1px solid rgba(148,163,184,0.12);
+}
+
+th{
+font-size:12px;
+text-transform:uppercase;
+letter-spacing:0.06em;
+color:#cbd5e1;
+}
+
+tr:last-child td{
+border-bottom:none;
+}
+
+.badge{
+display:inline-flex;
+align-items:center;
+gap:8px;
+padding:7px 11px;
+border-radius:999px;
+font-size:12px;
+font-weight:700;
+}
+
+.badge::before{
+content:"";
+width:8px;
+height:8px;
+border-radius:50%;
+background:currentColor;
+}
+
+.status-scheduled{color:#cbd5e1;background:rgba(148,163,184,0.12);}
+.status-calling,.status-ringing{color:var(--shell-accent);background:rgba(56,189,248,0.12);}
+.status-answered{color:var(--shell-success);background:rgba(34,197,94,0.12);}
+.status-no_response,.status-not_picked{color:var(--shell-warn);background:rgba(245,158,11,0.12);}
+.status-rejected,.status-invalid,.status-failed,.status-error{color:var(--shell-danger);background:rgba(239,68,68,0.12);}
+
+.empty{
+padding:28px 12px;
+text-align:center;
+color:var(--shell-muted);
+}
+
+@media (max-width: 1080px){
+.grid{
+grid-template-columns:1fr;
+}
+}
+
+@media (max-width: 768px){
+.approval{
+flex-direction:column;
+align-items:flex-start;
+}
+
+.table-head{
+flex-direction:column;
+align-items:flex-start;
+}
+}
+</style>
+</head>
+<body data-support-page="outbound">
+
+<div class="app-shell">
+  <aside class="app-sidebar">
+    <div class="brand-card">
+      <div class="brand-mark">
+        <div class="brand-lines">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </div>
+      <div class="brand-copy">
+        <strong>AI CALLER</strong>
+        <small>Smart outbound and inbound campaign control panel</small>
+      </div>
+    </div>
+
+    <nav class="nav-links">
+      <a class="nav-link" href="/dashboard">
+        <span class="nav-icon">01</span>
+        <span>
+          <span class="nav-label">Dashboard</span>
+          <span class="nav-sublabel">Live performance and health</span>
+        </span>
+      </a>
+      <a class="nav-link active" href="/outbound">
+        <span class="nav-icon">02</span>
+        <span>
+          <span class="nav-label">Outbound Calls</span>
+          <span class="nav-sublabel">Single and bulk call scheduling</span>
+        </span>
+      </a>
+      <a class="nav-link" href="/settings">
+        <span class="nav-icon">03</span>
+        <span>
+          <span class="nav-label">Settings</span>
+          <span class="nav-sublabel">Credential approval and setup</span>
+        </span>
+      </a>
+      <a class="nav-link" href="/call-detail-record">
+        <span class="nav-icon">04</span>
+        <span>
+          <span class="nav-label">Call Detail Record</span>
+          <span class="nav-sublabel">Minutes, wallet and billing</span>
+        </span>
+      </a>
+    </nav>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="sidebar-footer">
+      <p>Need quick help? Use the WhatsApp support button from any page to send a pre-filled issue summary.</p>
+      <a class="logout-link" href="/logout">Logout</a>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div class="content-shell">
+      <div class="page-hero">
+        <div>
+          <h1>Outbound Campaign Manager</h1>
+          <p>Schedule calls one by one or upload an Excel sheet for bulk calling. The live table below updates as each call moves from dispatching to ringing, answered, or no response.</p>
+        </div>
+        <div class="hero-chip">Realtime refresh every 3 seconds</div>
+      </div>
+
+      <div class="approval {% if not approved_agent %}pending{% endif %}">
+        <div>
+          <strong>{% if approved_agent %}Approved Agent Ready{% else %}Approval Needed{% endif %}</strong>
+          <p>
+          {% if approved_agent %}
+          Credential {{approved_agent.credential_id}} is approved. Assigned number: {{approved_agent.assigned_number or "Not set"}}.
+          {% else %}
+          Please go to Settings and approve a valid credential from `agent_checker` before scheduling outbound calls.
+          {% endif %}
+          </p>
+        </div>
+        <a href="/settings">{% if approved_agent %}Manage Approval{% else %}Open Settings{% endif %}</a>
+      </div>
+
+      <div class="grid">
+        <div class="surface panel">
+          <h2>Single Call Scheduling</h2>
+          <p class="subtext">Use this when you want to add contacts manually one by one.</p>
+          <form id="callForm">
+            <label for="phone">Phone Number</label>
+            <input id="phone" name="phone" placeholder="+91XXXXXXXXXX" {% if not approved_agent %}disabled{% endif %} required>
+
+            <label for="time">Schedule Time</label>
+            <input id="time" name="time" type="datetime-local" {% if not approved_agent %}disabled{% endif %} required>
+
+            <button id="submitBtn" type="submit" {% if not approved_agent %}disabled{% endif %}>Schedule Call</button>
+            <div id="feedback" class="feedback"></div>
+          </form>
+        </div>
+
+        <div class="surface panel">
+          <h2>Bulk Upload From Excel</h2>
+          <p class="subtext">Upload `.xlsx` or `.csv` with a phone column. A `schedule_time` column is optional if you provide one default time below.</p>
+          <form id="uploadForm" enctype="multipart/form-data">
+            <label for="contactFile">Upload File</label>
+            <input id="contactFile" name="file" type="file" accept=".xlsx,.csv" {% if not approved_agent %}disabled{% endif %} required>
+
+            <label for="defaultTime">Default Schedule Time</label>
+            <input id="defaultTime" name="default_time" type="datetime-local" {% if not approved_agent %}disabled{% endif %}>
+
+            <button id="uploadBtn" class="secondary-btn" type="submit" {% if not approved_agent %}disabled{% endif %}>Upload and Schedule Calls</button>
+            <div id="uploadFeedback" class="feedback"></div>
+          </form>
+
+          <div class="sample">
+            <strong>Sample Excel / CSV headers</strong>
+            <code>name, phone, schedule_time
+Acme Factory, +919876543210, 2026-03-15 15:30
+Rohan Mehta, +919999888777, 2026-03-15 16:00</code>
+          </div>
+        </div>
+      </div>
+
+      <div class="surface table-card">
+        <div class="table-head">
+          <div>
+            <h2>Call Queue and Live Status</h2>
+            <p>Latest call state is pulled from the backend automatically.</p>
+          </div>
+          <div class="meta" id="lastUpdated">Loading...</div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Contact</th>
+                <th>Phone</th>
+                <th>Scheduled</th>
+                <th>Status</th>
+                <th>Message</th>
+                <th>Updated</th>
+              </tr>
+            </thead>
+            <tbody id="callBody">
+              <tr><td colspan="6" class="empty">Loading calls...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='support-widget.js') }}"></script>
+<script>
+const bodyEl = document.getElementById("callBody");
+const feedbackEl = document.getElementById("feedback");
+const uploadFeedbackEl = document.getElementById("uploadFeedback");
+const submitBtn = document.getElementById("submitBtn");
+const uploadBtn = document.getElementById("uploadBtn");
+const lastUpdatedEl = document.getElementById("lastUpdated");
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function statusLabel(status) {
+  const labels = {
+    scheduled: "Scheduled",
+    calling: "Dispatching",
+    ringing: "Ringing",
+    answered: "Answered",
+    no_response: "No Response",
+    not_picked: "Not Picked",
+    rejected: "Rejected",
+    invalid: "Invalid",
+    failed: "Failed",
+    error: "Error"
+  };
+  return labels[status] || status;
+}
+
+function setFeedback(element, message, type) {
+  element.textContent = message || "";
+  element.className = "feedback" + (type ? ` ${type}` : "");
+}
+
+async function scheduleCall(event) {
+  event.preventDefault();
+
+  const phone = document.getElementById("phone").value.trim();
+  const time = document.getElementById("time").value;
+
+  if (!phone || !time) {
+    setFeedback(feedbackEl, "Please enter phone number and schedule time.", "error");
+    return;
+  }
+
+  submitBtn.disabled = true;
+  setFeedback(feedbackEl, "Scheduling call...", "");
+
+  try {
+    const res = await fetch("/schedule_call", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone, time })
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "Unable to schedule call.");
+    }
+
+    document.getElementById("callForm").reset();
+    setFeedback(feedbackEl, data.message || "Call scheduled successfully.", "success");
+    await loadCalls();
+  } catch (err) {
+    setFeedback(feedbackEl, err.message || "Unable to schedule call.", "error");
+  } finally {
+    submitBtn.disabled = false;
+  }
+}
+
+async function uploadContacts(event) {
+  event.preventDefault();
+
+  const fileInput = document.getElementById("contactFile");
+  if (!fileInput.files.length) {
+    setFeedback(uploadFeedbackEl, "Please choose an Excel or CSV file first.", "error");
+    return;
+  }
+
+  uploadBtn.disabled = true;
+  setFeedback(uploadFeedbackEl, "Uploading contacts and scheduling calls...", "");
+
+  const formData = new FormData();
+  formData.append("file", fileInput.files[0]);
+  formData.append("default_time", document.getElementById("defaultTime").value);
+
+  try {
+    const res = await fetch("/upload_contacts", {
+      method: "POST",
+      body: formData
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "Unable to upload contacts.");
+    }
+
+    document.getElementById("uploadForm").reset();
+    setFeedback(uploadFeedbackEl, data.message || "Contacts uploaded successfully.", "success");
+    await loadCalls();
+  } catch (err) {
+    setFeedback(uploadFeedbackEl, err.message || "Unable to upload contacts.", "error");
+  } finally {
+    uploadBtn.disabled = false;
+  }
+}
+
+async function loadCalls() {
+  try {
+    const res = await fetch("/calls");
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "Unable to load calls.");
+    }
+
+    if (!Array.isArray(data) || data.length === 0) {
+      bodyEl.innerHTML = '<tr><td colspan="6" class="empty">No calls scheduled yet.</td></tr>';
+    } else {
+      bodyEl.innerHTML = data.map((call) => `
+        <tr>
+          <td>${escapeHtml(call.customer_name || "-")}</td>
+          <td>${escapeHtml(call.phone)}</td>
+          <td>${escapeHtml(call.time)}</td>
+          <td><span class="badge status-${escapeHtml(call.status)}">${escapeHtml(statusLabel(call.status))}</span></td>
+          <td>${escapeHtml(call.message || "-")}</td>
+          <td>${escapeHtml(call.updated_at || "-")}</td>
+        </tr>
+      `).join("");
+    }
+
+    lastUpdatedEl.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    bodyEl.innerHTML = '<tr><td colspan="6" class="empty">Unable to load call data right now.</td></tr>';
+    lastUpdatedEl.textContent = "Live status unavailable";
+  }
+}
+
+document.getElementById("callForm").addEventListener("submit", scheduleCall);
+document.getElementById("uploadForm").addEventListener("submit", uploadContacts);
+setInterval(loadCalls, 3000);
+loadCalls();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+<meta charset="UTF-8">
+<title>AI Voice Call Dashboard</title>
+
+<style>
+
+body{
+font-family: Arial, Helvetica, sans-serif;
+background:#0f172a;
+color:white;
+margin:0;
+padding:0;
+}
+
+.container{
+width:950px;
+margin:auto;
+margin-top:40px;
+}
+
+h1{
+text-align:center;
+color:#38bdf8;
+margin-bottom:30px;
+}
+
+.schedule-box{
+display:flex;
+gap:10px;
+justify-content:center;
+margin-bottom:30px;
+}
+
+input{
+padding:10px;
+border-radius:6px;
+border:none;
+width:260px;
+}
+
+button{
+background:#22c55e;
+color:white;
+border:none;
+padding:10px 20px;
+border-radius:6px;
+cursor:pointer;
+font-size:15px;
+}
+
+button:hover{
+background:#16a34a;
+}
+
+table{
+width:100%;
+background:#1e293b;
+border-collapse:collapse;
+border-radius:8px;
+overflow:hidden;
+}
+
+th{
+background:#334155;
+padding:12px;
+}
+
+td{
+padding:12px;
+border-bottom:1px solid #334155;
+text-align:center;
+}
+
+.status-answered{color:#22c55e;}
+.status-not_picked{color:#f59e0b;}
+.status-rejected{color:#ef4444;}
+.status-invalid{color:#f87171;}
+.status-calling{color:#38bdf8;}
+.status-error{color:red;}
+
+</style>
+
+</head>
+
+<body>
+
+<div class="container">
+
+<h1>AI Voice Call Dashboard</h1>
+
+<div class="schedule-box">
+
+<input id="phone" placeholder="+91XXXXXXXXXX">
+
+<input id="time" type="datetime-local">
+
+<button onclick="scheduleCall()">Schedule Call</button>
+
+</div>
+
+<table>
+
+<thead>
+
+<tr>
+<th>Phone</th>
+<th>Time</th>
+<th>Status</th>
+<th>Message</th>
+</tr>
+
+</thead>
+
+<tbody id="callBody">
+</tbody>
+
+</table>
+
+</div>
+
+<script>
+
+function scheduleCall(){
+
+let phone=document.getElementById("phone").value
+let time=document.getElementById("time").value
+
+fetch("/schedule_call",{
+
+method:"POST",
+headers:{"Content-Type":"application/json"},
+body:JSON.stringify({
+phone:phone,
+time:time
+})
+
+})
+.then(res=>res.json())
+.then(data=>{
+alert("Call Scheduled")
+loadCalls()
+})
+
+}
+
+function loadCalls(){
+
+fetch("/calls")
+.then(res=>res.json())
+.then(data=>{
+
+let body=""
+
+data.forEach(c=>{
+
+body+=`
+<tr>
+<td>${c.phone}</td>
+<td>${c.time}</td>
+<td class="status-${c.status}">${c.status}</td>
+<td>${c.message}</td>
+</tr>
+`
+
+})
+
+document.getElementById("callBody").innerHTML=body
+
+})
+
+}
+
+setInterval(loadCalls,2000)
+
+loadCalls()
+
+</script>
+
+</body>
+
+</html>

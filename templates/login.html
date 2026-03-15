@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Agent Login</title>
+<style>
+body{
+font-family:Arial;
+background:#0f172a;
+display:flex;
+align-items:center;
+justify-content:center;
+height:100vh;
+margin:0;
+color:white;
+}
+
+.card{
+background:#1e293b;
+padding:40px;
+border-radius:10px;
+width:320px;
+text-align:center;
+box-shadow:0 10px 30px rgba(0,0,0,0.5);
+}
+
+input{
+width:100%;
+padding:10px;
+margin:8px 0;
+border:none;
+border-radius:6px;
+}
+
+button{
+width:100%;
+padding:10px;
+background:#38bdf8;
+border:none;
+border-radius:6px;
+color:white;
+font-size:16px;
+cursor:pointer;
+}
+
+button:hover{
+background:#0ea5e9;
+}
+
+a{
+color:#38bdf8;
+text-decoration:none;
+}
+</style>
+</head>
+
+<body>
+
+<div class="card">
+
+<h2>AI Agent Login</h2>
+
+<form method="POST">
+
+<input type="email" name="email" placeholder="Email" required>
+
+<input type="password" name="password" placeholder="Password" required>
+
+<button type="submit">Login</button>
+
+</form>
+
+<p style="margin-top:15px;">
+New user? <a href="/register">Register</a>
+</p>
+
+</div>
+
+</body>
+</html>

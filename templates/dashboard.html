@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>AI Call Dashboard</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard-shell.css') }}">
+<style>
+.approval-banner{
+margin-bottom:20px;
+padding:18px 20px;
+display:flex;
+justify-content:space-between;
+align-items:center;
+gap:16px;
+border-radius:22px;
+border:1px solid var(--shell-line);
+background:linear-gradient(135deg,rgba(16,32,61,0.94),rgba(20,36,63,0.72));
+}
+
+.approval-banner.pending{
+border-color:rgba(245,158,11,0.28);
+background:linear-gradient(135deg,rgba(120,53,15,0.24),rgba(16,32,61,0.84));
+}
+
+.approval-banner strong{
+display:block;
+margin-bottom:6px;
+font-size:16px;
+}
+
+.approval-banner p,
+.approval-banner a{
+margin:0;
+color:var(--shell-muted);
+}
+
+.approval-banner a{
+color:#dbeafe;
+font-weight:700;
+text-decoration:none;
+}
+
+.stats{
+display:grid;
+grid-template-columns:repeat(6,1fr);
+gap:16px;
+margin-bottom:22px;
+}
+
+.card{
+padding:20px;
+border-radius:22px;
+background:linear-gradient(180deg,rgba(16,32,61,0.94),rgba(13,24,48,0.86));
+border:1px solid var(--shell-line);
+box-shadow:0 18px 42px rgba(2,6,23,0.3);
+}
+
+.stat-label{
+color:var(--shell-muted);
+font-size:12px;
+text-transform:uppercase;
+letter-spacing:0.08em;
+}
+
+.stat-value{
+margin-top:12px;
+font-size:32px;
+font-weight:800;
+}
+
+.accent{color:var(--shell-accent);}
+.success{color:var(--shell-success);}
+.warn{color:var(--shell-warn);}
+.danger{color:var(--shell-danger);}
+
+.layout{
+display:grid;
+grid-template-columns:1.35fr 0.85fr;
+gap:20px;
+}
+
+.panel{
+overflow:hidden;
+}
+
+.panel-head{
+padding:22px 24px 0;
+display:flex;
+justify-content:space-between;
+align-items:flex-start;
+gap:12px;
+}
+
+.panel-head h2{
+margin:0 0 6px;
+font-size:22px;
+}
+
+.panel-head p{
+margin:0;
+color:var(--shell-muted);
+}
+
+.meta{
+font-size:13px;
+color:var(--shell-muted);
+white-space:nowrap;
+}
+
+.table-wrap{
+padding:0 24px 24px;
+overflow:auto;
+}
+
+table{
+width:100%;
+border-collapse:collapse;
+margin-top:16px;
+}
+
+th, td{
+padding:15px 10px;
+text-align:left;
+border-bottom:1px solid rgba(148,163,184,0.12);
+}
+
+th{
+font-size:12px;
+text-transform:uppercase;
+letter-spacing:0.06em;
+color:#cbd5e1;
+}
+
+tr:last-child td{
+border-bottom:none;
+}
+
+.status{
+display:inline-flex;
+align-items:center;
+gap:8px;
+padding:7px 11px;
+border-radius:999px;
+font-size:12px;
+font-weight:700;
+}
+
+.status::before{
+content:"";
+width:8px;
+height:8px;
+border-radius:50%;
+background:currentColor;
+}
+
+.status-scheduled{color:#cbd5e1;background:rgba(148,163,184,0.12);}
+.status-calling,.status-ringing{color:var(--shell-accent);background:rgba(56,189,248,0.12);}
+.status-answered{color:var(--shell-success);background:rgba(34,197,94,0.12);}
+.status-no_response,.status-not_picked{color:var(--shell-warn);background:rgba(245,158,11,0.12);}
+.status-rejected,.status-invalid,.status-failed,.status-error{color:var(--shell-danger);background:rgba(239,68,68,0.12);}
+
+.side-stack{
+display:grid;
+gap:18px;
+}
+
+.agent-box{
+padding:22px;
+}
+
+.agent-box h2{
+margin:0 0 6px;
+font-size:22px;
+}
+
+.agent-box p{
+margin:0;
+color:var(--shell-muted);
+}
+
+.agent-grid{
+display:grid;
+gap:12px;
+margin-top:16px;
+}
+
+.agent-item{
+padding:14px 16px;
+border-radius:16px;
+background:rgba(8,16,31,0.72);
+border:1px solid rgba(148,163,184,0.12);
+}
+
+.agent-item span{
+display:block;
+color:var(--shell-muted);
+font-size:12px;
+text-transform:uppercase;
+margin-bottom:6px;
+}
+
+.empty{
+padding:28px 12px;
+text-align:center;
+color:var(--shell-muted);
+}
+
+@media (max-width: 1200px){
+.stats{
+grid-template-columns:repeat(3,1fr);
+}
+
+.layout{
+grid-template-columns:1fr;
+}
+}
+
+@media (max-width: 768px){
+.approval-banner{
+flex-direction:column;
+align-items:flex-start;
+}
+
+.stats{
+grid-template-columns:repeat(2,1fr);
+}
+}
+</style>
+</head>
+<body data-support-page="dashboard">
+
+<div class="app-shell">
+  <aside class="app-sidebar">
+    <div class="brand-card">
+      <div class="brand-mark">
+        <div class="brand-lines">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </div>
+      <div class="brand-copy">
+        <strong>AI CALLER</strong>
+        <small>Smart outbound and inbound campaign control panel</small>
+      </div>
+    </div>
+
+    <nav class="nav-links">
+      <a class="nav-link active" href="/dashboard">
+        <span class="nav-icon">01</span>
+        <span>
+          <span class="nav-label">Dashboard</span>
+          <span class="nav-sublabel">Live performance and health</span>
+        </span>
+      </a>
+      <a class="nav-link" href="/outbound">
+        <span class="nav-icon">02</span>
+        <span>
+          <span class="nav-label">Outbound Calls</span>
+          <span class="nav-sublabel">Single and bulk call scheduling</span>
+        </span>
+      </a>
+      <a class="nav-link" href="/settings">
+        <span class="nav-icon">03</span>
+        <span>
+          <span class="nav-label">Settings</span>
+          <span class="nav-sublabel">Credential approval and setup</span>
+        </span>
+      </a>
+      <a class="nav-link" href="/call-detail-record">
+        <span class="nav-icon">04</span>
+        <span>
+          <span class="nav-label">Call Detail Record</span>
+          <span class="nav-sublabel">Minutes, wallet and billing</span>
+        </span>
+      </a>
+    </nav>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="sidebar-footer">
+      <p>Need quick help? Use the WhatsApp support button from any page to send a pre-filled issue summary.</p>
+      <a class="logout-link" href="/logout">Logout</a>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div class="content-shell">
+      <div class="page-hero">
+        <div>
+          <h1>Realtime AI Calling Dashboard</h1>
+          <p>Track approved agent status, live campaign health, answered rate, and the latest outbound activity from one attractive command center.</p>
+        </div>
+        <div class="hero-chip">Auto refresh every 4 seconds</div>
+      </div>
+
+      <div id="approvalBanner" class="approval-banner {% if not payload.agent %}pending{% endif %}">
+        <div>
+          <strong>{% if payload.agent %}Approved Agent Connected{% else %}Approval Required{% endif %}</strong>
+          <p id="approvalText">
+          {% if payload.agent %}
+          Credential {{payload.agent.credential_id}} is active with assigned number {{payload.agent.assigned_number or "Not set"}}.
+          {% else %}
+          Go to Settings and approve a credential from the agent_checker table before starting outbound calls.
+          {% endif %}
+          </p>
+        </div>
+        <a href="/settings">{% if payload.agent %}Manage Agent{% else %}Open Settings{% endif %}</a>
+      </div>
+
+      <div class="stats">
+        <div class="card"><div class="stat-label">Total Calls</div><div class="stat-value accent" id="statTotal">{{payload.stats.total}}</div></div>
+        <div class="card"><div class="stat-label">Scheduled</div><div class="stat-value" id="statScheduled">{{payload.stats.scheduled}}</div></div>
+        <div class="card"><div class="stat-label">Live Calls</div><div class="stat-value accent" id="statLive">{{payload.stats.live}}</div></div>
+        <div class="card"><div class="stat-label">Answered</div><div class="stat-value success" id="statAnswered">{{payload.stats.answered}}</div></div>
+        <div class="card"><div class="stat-label">No Response</div><div class="stat-value warn" id="statNoResponse">{{payload.stats.no_response}}</div></div>
+        <div class="card"><div class="stat-label">Failed</div><div class="stat-value danger" id="statFailed">{{payload.stats.failed}}</div></div>
+        <div class="card"><div class="stat-label">Talk Minutes</div><div class="stat-value accent" id="statTalkMinutes">{{payload.stats.talk_minutes}}</div></div>
+        <div class="card"><div class="stat-label">Wallet Balance</div><div class="stat-value {% if payload.stats.wallet_remaining < 0 %}danger{% else %}success{% endif %}" id="statWalletRemaining">Rs {{payload.stats.wallet_remaining}}</div></div>
+      </div>
+
+      <div class="layout">
+        <div class="surface panel">
+          <div class="panel-head">
+            <div>
+              <h2>Recent Call Activity</h2>
+              <p>Latest calls for the current logged-in user.</p>
+            </div>
+            <div class="meta" id="lastUpdated">Loading...</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Contact</th>
+                  <th>Phone</th>
+                  <th>Scheduled</th>
+                  <th>Status</th>
+                  <th>Message</th>
+                  <th>Updated</th>
+                </tr>
+              </thead>
+              <tbody id="callBody">
+              {% if payload.calls %}
+              {% for call in payload.calls %}
+                <tr>
+                  <td>{{call.customer_name or "-"}}</td>
+                  <td>{{call.phone}}</td>
+                  <td>{{call.time}}</td>
+                  <td><span class="status status-{{call.status}}">{{call.status}}</span></td>
+                  <td>{{call.message or "-"}}</td>
+                  <td>{{call.updated_at}}</td>
+                </tr>
+              {% endfor %}
+              {% else %}
+                <tr><td colspan="6" class="empty">No calls available yet.</td></tr>
+              {% endif %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="side-stack">
+          <div class="surface agent-box">
+            <h2>Agent Summary</h2>
+            <p>Current approved profile used for outbound permissions.</p>
+            <div class="agent-grid" id="agentGrid">
+            {% if payload.agent %}
+              <div class="agent-item"><span>Credential ID</span><strong>{{payload.agent.credential_id}}</strong></div>
+              <div class="agent-item"><span>Assigned Number</span><strong>{{payload.agent.assigned_number or "Not set"}}</strong></div>
+              <div class="agent-item"><span>SIP Username</span><strong>{{payload.agent.sip_user or "Not set"}}</strong></div>
+              <div class="agent-item"><span>Approved At</span><strong>{{payload.agent.approved_at}}</strong></div>
+            {% else %}
+              <div class="agent-item"><span>Status</span><strong>No approved agent linked yet.</strong></div>
+            {% endif %}
+            </div>
+          </div>
+
+          <div class="surface agent-box">
+            <h2>Success Rate</h2>
+            <p>Answered calls divided by total calls.</p>
+            <div class="stat-value success" id="statSuccessRate">{{payload.stats.success_rate}}%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='support-widget.js') }}"></script>
+<script>
+const callBody = document.getElementById("callBody");
+const approvalBanner = document.getElementById("approvalBanner");
+const approvalText = document.getElementById("approvalText");
+const lastUpdated = document.getElementById("lastUpdated");
+const agentGrid = document.getElementById("agentGrid");
+
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function statusLabel(status) {
+  const labels = {
+    scheduled: "Scheduled",
+    calling: "Dispatching",
+    ringing: "Ringing",
+    answered: "Answered",
+    no_response: "No Response",
+    not_picked: "Not Picked",
+    rejected: "Rejected",
+    invalid: "Invalid",
+    failed: "Failed",
+    error: "Error"
+  };
+  return labels[status] || status;
+}
+
+function setText(id, value) {
+  document.getElementById(id).textContent = value;
+}
+
+function renderCalls(calls) {
+  if (!Array.isArray(calls) || calls.length === 0) {
+    callBody.innerHTML = '<tr><td colspan="6" class="empty">No calls available yet.</td></tr>';
+    return;
+  }
+
+  callBody.innerHTML = calls.map((call) => `
+    <tr>
+      <td>${escapeHtml(call.customer_name || "-")}</td>
+      <td>${escapeHtml(call.phone)}</td>
+      <td>${escapeHtml(call.time)}</td>
+      <td><span class="status status-${escapeHtml(call.status)}">${escapeHtml(statusLabel(call.status))}</span></td>
+      <td>${escapeHtml(call.message || "-")}</td>
+      <td>${escapeHtml(call.updated_at || "-")}</td>
+    </tr>
+  `).join("");
+}
+
+function renderAgent(agent) {
+  if (!agent) {
+    approvalBanner.classList.add("pending");
+    approvalText.textContent = "Go to Settings and approve a credential from the agent_checker table before starting outbound calls.";
+    agentGrid.innerHTML = '<div class="agent-item"><span>Status</span><strong>No approved agent linked yet.</strong></div>';
+    return;
+  }
+
+  approvalBanner.classList.remove("pending");
+  approvalText.textContent = `Credential ${agent.credential_id} is active with assigned number ${agent.assigned_number || "Not set"}.`;
+  agentGrid.innerHTML = `
+    <div class="agent-item"><span>Credential ID</span><strong>${escapeHtml(agent.credential_id)}</strong></div>
+    <div class="agent-item"><span>Assigned Number</span><strong>${escapeHtml(agent.assigned_number || "Not set")}</strong></div>
+    <div class="agent-item"><span>SIP Username</span><strong>${escapeHtml(agent.sip_user || "Not set")}</strong></div>
+    <div class="agent-item"><span>Approved At</span><strong>${escapeHtml(agent.approved_at || "-")}</strong></div>
+  `;
+}
+
+async function loadDashboard() {
+  try {
+    const res = await fetch("/dashboard_data");
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "Unable to load dashboard data.");
+    }
+
+    setText("statTotal", data.stats.total);
+    setText("statScheduled", data.stats.scheduled);
+    setText("statLive", data.stats.live);
+    setText("statAnswered", data.stats.answered);
+    setText("statNoResponse", data.stats.no_response);
+    setText("statFailed", data.stats.failed);
+    setText("statTalkMinutes", data.stats.talk_minutes);
+    setText("statWalletRemaining", `Rs ${data.stats.wallet_remaining}`);
+    setText("statSuccessRate", `${data.stats.success_rate}%`);
+    renderCalls(data.calls);
+    renderAgent(data.agent);
+    lastUpdated.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    lastUpdated.textContent = "Live refresh unavailable";
+  }
+}
+
+setInterval(loadDashboard, 4000);
+loadDashboard();
+</script>
+
+</body>
+</html>

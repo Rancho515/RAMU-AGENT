@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Agent Settings</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard-shell.css') }}">
+<style>
+.status-pill{
+padding:11px 14px;
+border-radius:999px;
+font-size:14px;
+border:1px solid var(--shell-line);
+background:rgba(15,27,53,0.8);
+}
+
+.approved{
+color:#bbf7d0;
+border-color:rgba(34,197,94,0.34);
+background:rgba(34,197,94,0.1);
+}
+
+.pending{
+color:#fde68a;
+border-color:rgba(245,158,11,0.3);
+background:rgba(245,158,11,0.1);
+}
+
+.grid{
+display:grid;
+grid-template-columns:1.08fr 0.92fr;
+gap:22px;
+}
+
+.card{
+padding:24px;
+}
+
+.card h2{
+margin:0 0 8px;
+font-size:23px;
+}
+
+.subtext{
+margin:0 0 18px;
+color:var(--shell-muted);
+line-height:1.5;
+}
+
+label{
+display:block;
+margin-top:14px;
+margin-bottom:6px;
+font-size:14px;
+color:#cbd5e1;
+}
+
+input{
+width:100%;
+padding:12px;
+border-radius:12px;
+border:1px solid var(--shell-line);
+background:#091327;
+color:white;
+}
+
+button{
+margin-top:18px;
+padding:12px 16px;
+width:100%;
+border:none;
+border-radius:12px;
+background:linear-gradient(135deg,#38bdf8,#0ea5e9);
+color:white;
+font-size:16px;
+font-weight:700;
+cursor:pointer;
+}
+
+.message{
+margin-top:14px;
+padding:12px 14px;
+border-radius:14px;
+font-size:14px;
+}
+
+.message.success{
+background:rgba(34,197,94,0.12);
+color:#bbf7d0;
+border:1px solid rgba(34,197,94,0.24);
+}
+
+.message.error{
+background:rgba(239,68,68,0.12);
+color:#fecaca;
+border:1px solid rgba(239,68,68,0.24);
+}
+
+.info-grid{
+display:grid;
+grid-template-columns:1fr 1fr;
+gap:14px;
+margin-top:16px;
+}
+
+.info-box{
+padding:16px;
+border-radius:16px;
+background:rgba(8,16,31,0.72);
+border:1px solid rgba(148,163,184,0.12);
+}
+
+.info-box span{
+display:block;
+font-size:12px;
+text-transform:uppercase;
+letter-spacing:0.05em;
+color:var(--shell-muted);
+margin-bottom:8px;
+}
+
+.info-box strong{
+font-size:15px;
+word-break:break-word;
+}
+
+.hint{
+margin-top:18px;
+padding:16px;
+border-radius:16px;
+background:rgba(56,189,248,0.08);
+border:1px solid rgba(56,189,248,0.18);
+color:#cbeafe;
+line-height:1.6;
+}
+
+@media (max-width: 980px){
+.grid{
+grid-template-columns:1fr;
+}
+}
+
+@media (max-width: 768px){
+.info-grid{
+grid-template-columns:1fr;
+}
+}
+</style>
+</head>
+<body data-support-page="settings">
+
+<div class="app-shell">
+  <aside class="app-sidebar">
+    <div class="brand-card">
+      <div class="brand-mark">
+        <div class="brand-lines">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      </div>
+      <div class="brand-copy">
+        <strong>AI CALLER</strong>
+        <small>Smart outbound and inbound campaign control panel</small>
+      </div>
+    </div>
+
+    <nav class="nav-links">
+      <a class="nav-link" href="/dashboard">
+        <span class="nav-icon">01</span>
+        <span>
+          <span class="nav-label">Dashboard</span>
+          <span class="nav-sublabel">Live performance and health</span>
+        </span>
+      </a>
+      <a class="nav-link" href="/outbound">
+        <span class="nav-icon">02</span>
+        <span>
+          <span class="nav-label">Outbound Calls</span>
+          <span class="nav-sublabel">Single and bulk call scheduling</span>
+        </span>
+      </a>
+      <a class="nav-link active" href="/settings">
+        <span class="nav-icon">03</span>
+        <span>
+          <span class="nav-label">Settings</span>
+          <span class="nav-sublabel">Credential approval and setup</span>
+        </span>
+      </a>
+      <a class="nav-link" href="/call-detail-record">
+        <span class="nav-icon">04</span>
+        <span>
+          <span class="nav-label">Call Detail Record</span>
+          <span class="nav-sublabel">Minutes, wallet and billing</span>
+        </span>
+      </a>
+    </nav>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="sidebar-footer">
+      <p>Need quick help? Use the WhatsApp support button from any page to send a pre-filled issue summary.</p>
+      <a class="logout-link" href="/logout">Logout</a>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div class="content-shell">
+      <div class="page-hero">
+        <div>
+          <h1>Agent Approval Settings</h1>
+          <p>Verify the credential ID and password from the `agent_checker` table. After approval, the outbound calling features become active for this logged-in user.</p>
+        </div>
+        <div class="status-pill {% if profile %}approved{% else %}pending{% endif %}">
+          {% if profile %}Approved and Ready{% else %}Approval Pending{% endif %}
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="surface card">
+          <h2>Verify Agent Credential</h2>
+          <p class="subtext">Once this matches the backend approval table, the user can use realtime outbound scheduling and Excel upload campaigns.</p>
+
+          <form method="POST">
+            <label for="credential_id">Credential ID</label>
+            <input id="credential_id" name="credential_id" placeholder="Enter agent credential ID" required>
+
+            <label for="credential_password">Credential Password</label>
+            <input id="credential_password" name="credential_password" type="password" placeholder="Enter credential password" required>
+
+            <button type="submit">Approve This Account</button>
+          </form>
+
+          {% if message %}
+          <div class="message {{message_type}}">{{message}}</div>
+          {% endif %}
+
+          <div class="hint">
+            After approval, this user can access outbound campaign features. If anything fails, use the WhatsApp support button and send the issue directly to support.
+          </div>
+        </div>
+
+        <div class="surface card">
+          <h2>Current Approved Agent</h2>
+          {% if profile %}
+          <p class="subtext">This approved profile is linked to the logged-in user right now.</p>
+          <div class="info-grid">
+            <div class="info-box">
+              <span>Credential ID</span>
+              <strong>{{profile.credential_id}}</strong>
+            </div>
+            <div class="info-box">
+              <span>Assigned Number</span>
+              <strong>{{profile.assigned_number or "Not set"}}</strong>
+            </div>
+            <div class="info-box">
+              <span>SIP Username</span>
+              <strong>{{profile.sip_user or "Not set"}}</strong>
+            </div>
+            <div class="info-box">
+              <span>SIP Password</span>
+              <strong>{% if profile.sip_pass %}************{% else %}Not set{% endif %}</strong>
+            </div>
+            <div class="info-box">
+              <span>Status</span>
+              <strong>{% if profile.active %}Active{% else %}Inactive{% endif %}</strong>
+            </div>
+            <div class="info-box">
+              <span>Approved At</span>
+              <strong>{{profile.approved_at}}</strong>
+            </div>
+          </div>
+          {% else %}
+          <p class="subtext">No approved agent is linked yet. Enter a valid credential on the left to activate calling features for this account.</p>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='support-widget.js') }}"></script>
+</body>
+</html>
