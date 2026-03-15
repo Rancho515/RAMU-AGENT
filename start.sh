@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo "Starting AI Agent..."
-python agent.py &
+python agent.py dev &
 
 echo "Starting Flask Server..."
-gunicorn app:app
+exec gunicorn app:app
