@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS `agent_wallet_transactions` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `user_id` BIGINT UNSIGNED NOT NULL,
+  `payment_reference` VARCHAR(64) NOT NULL,
+  `amount` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+  `transaction_type` ENUM('recharge','debit','refund','adjustment') NOT NULL DEFAULT 'recharge',
+  `payment_status` ENUM('pending','paid','failed') NOT NULL DEFAULT 'pending',
+  `gateway_name` VARCHAR(50) NOT NULL DEFAULT 'razorpay',
+  `gateway_link_id` VARCHAR(120) DEFAULT NULL,
+  `gateway_link_url` VARCHAR(255) DEFAULT NULL,
+  `gateway_payment_id` VARCHAR(120) DEFAULT NULL,
+  `gateway_order_id` VARCHAR(120) DEFAULT NULL,
+  `gateway_signature` VARCHAR(255) DEFAULT NULL,
+  `gateway_payload` TEXT DEFAULT NULL,
+  `note` VARCHAR(255) DEFAULT NULL,
+  `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `paid_at` TIMESTAMP NULL DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_agent_wallet_payment_reference` (`payment_reference`),
+  KEY `idx_agent_wallet_user_status` (`user_id`, `payment_status`),
+  KEY `idx_agent_wallet_user_type` (`user_id`, `transaction_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

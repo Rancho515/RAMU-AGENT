@@ -2,14 +2,20 @@ import os
 import math
 import subprocess
 import sys
+import uuid
+import json
+import hmac
+import base64
+import hashlib
 from collections import defaultdict
 from datetime import date, datetime, time as dt_time
+from urllib.parse import urlencode
 from urllib import error as url_error
 from urllib.request import Request, urlopen
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from dotenv import load_dotenv
-from flask import Flask, jsonify, redirect, render_template, request, session
+from flask import Flask, jsonify, redirect, render_template, request, session, url_for
 from flask_mysqldb import MySQL
 
 try:
@@ -44,12 +50,101 @@ SELL_RATE_PER_MINUTE = float(os.getenv("SELL_RATE_PER_MINUTE", "5"))
 WALLET_RECHARGE_URL = os.getenv("WALLET_RECHARGE_URL", "https://rzp.io/rzp/jey2OJZ")
 MIN_RECHARGE_AMOUNT = float(os.getenv("MIN_RECHARGE_AMOUNT", "30"))
 MAX_RECHARGE_AMOUNT = float(os.getenv("MAX_RECHARGE_AMOUNT", "10000"))
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "")
+RAZORPAY_API_URL = os.getenv("RAZORPAY_API_URL", "https://api.razorpay.com/v1")
+DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL", "pranjalsingh20032007@gmail.com").strip().lower()
+SCHEDULER_ENABLED = os.getenv("SCHEDULER_ENABLED", "1") == "1"
+_scheduler_bootstrapped = False
 
 
 def login_required():
     if "user" not in session:
         return False
     return True
+
+
+def admin_login_required():
+    if "admin_user" not in session:
+        return False
+    return True
+
+
+def is_admin_record(row_dict):
+    email = str(row_dict.get("email", "")).strip().lower()
+    return (
+        bool(row_dict.get("is_admin"))
+        or str(row_dict.get("role", "")).lower() == "admin"
+        or (DEFAULT_ADMIN_EMAIL and email == DEFAULT_ADMIN_EMAIL)
+    )
+
+
+def can_check_user_active():
+    return "is_active" in get_agent_user_columns()
+
+
+def build_agent_user_select():
+    columns = get_agent_user_columns()
+    select_fields = ["id"]
+    select_fields.append("name" if "name" in columns else "'' AS name")
+    select_fields.append("email" if "email" in columns else "'' AS email")
+    select_fields.append("password" if "password" in columns else "'' AS password")
+    select_fields.append("role" if "role" in columns else "'user' AS role")
+    select_fields.append("is_admin" if "is_admin" in columns else "0 AS is_admin")
+    select_fields.append("is_active" if "is_active" in columns else "1 AS is_active")
+    return ", ".join(select_fields)
+
+
+def get_agent_user_by_email(email):
+    columns = get_agent_user_columns()
+    if not columns:
+        return None
+
+    cur = mysql.connection.cursor()
+    cur.execute(
+        f"SELECT {build_agent_user_select()} FROM agent_users WHERE email=%s LIMIT 1",
+        (email,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "name": row[1],
+        "email": row[2],
+        "password": row[3],
+        "role": row[4],
+        "is_admin": bool(row[5]),
+        "is_active": bool(row[6]),
+    }
+
+
+def fetch_all_users():
+    columns = get_agent_user_columns()
+    if not columns:
+        return []
+
+    cur = mysql.connection.cursor()
+    cur.execute(
+        f"SELECT {build_agent_user_select()} FROM agent_users ORDER BY id DESC"
+    )
+    rows = cur.fetchall()
+    cur.close()
+    users = []
+    for row in rows:
+        users.append(
+            {
+                "id": row[0],
+                "name": row[1] or "",
+                "email": row[2] or "",
+                "role": row[4] or "user",
+                "is_admin": bool(row[5]),
+                "is_active": bool(row[6]),
+            }
+        )
+    return users
 
 
 def get_table_columns(table_name):
@@ -72,8 +167,20 @@ def get_agent_checker_columns():
     return get_table_columns("agent_checker")
 
 
+def get_agent_user_columns():
+    return get_table_columns("agent_users")
+
+
 def get_wallet_transaction_columns():
     return get_table_columns("agent_wallet_transactions")
+
+
+def get_support_request_columns():
+    return get_table_columns("agent_support_requests")
+
+
+def get_transfer_settings_columns():
+    return get_table_columns("agent_transfer_settings")
 
 
 def format_dt(value):
@@ -258,6 +365,74 @@ def get_current_agent_profile(user_id):
     }
 
 
+def get_transfer_settings(user_id):
+    columns = get_transfer_settings_columns()
+    if not columns:
+        return {
+            "enabled": False,
+            "transfer_number": "",
+            "table_ready": False,
+        }
+
+    cur = mysql.connection.cursor()
+    cur.execute(
+        """
+        SELECT transfer_number, is_enabled
+        FROM agent_transfer_settings
+        WHERE user_id=%s
+        LIMIT 1
+        """,
+        (user_id,),
+    )
+    row = cur.fetchone()
+    cur.close()
+
+    if not row:
+        return {
+            "enabled": False,
+            "transfer_number": "",
+            "table_ready": True,
+        }
+
+    return {
+        "enabled": bool(row[1]),
+        "transfer_number": row[0] or "",
+        "table_ready": True,
+    }
+
+
+def save_transfer_settings(user_id, transfer_number, is_enabled):
+    columns = get_transfer_settings_columns()
+    if not columns:
+        return False, "Please create `agent_transfer_settings` table first."
+
+    cur = mysql.connection.cursor()
+    cur.execute("SELECT id FROM agent_transfer_settings WHERE user_id=%s LIMIT 1", (user_id,))
+    row = cur.fetchone()
+
+    if row:
+        cur.execute(
+            """
+            UPDATE agent_transfer_settings
+            SET transfer_number=%s, is_enabled=%s, updated_at=NOW()
+            WHERE user_id=%s
+            """,
+            (transfer_number, 1 if is_enabled else 0, user_id),
+        )
+    else:
+        cur.execute(
+            """
+            INSERT INTO agent_transfer_settings(user_id, transfer_number, is_enabled)
+            VALUES(%s, %s, %s)
+            """,
+            (user_id, transfer_number, 1 if is_enabled else 0),
+        )
+
+    mysql.connection.commit()
+    cur.close()
+    return True, "Transfer settings saved successfully."
+
+
 def approve_agent_for_user(user_id, credential_id, credential_password):
     if not get_agent_checker_columns():
         return False, "Table `agent_checker` not found. Please create it first."
@@ -342,6 +517,7 @@ def get_wallet_summary(user_id, used_amount):
         return {
             "wallet_enabled": False,
             "total_recharged": 0.0,
+            "pending_recharge": 0.0,
             "remaining_balance": 0.0,
             "used_amount": round(used_amount, 2),
         }
@@ -351,37 +527,340 @@ def get_wallet_summary(user_id, used_amount):
         """
         SELECT COALESCE(SUM(amount), 0)
         FROM agent_wallet_transactions
-        WHERE user_id=%s AND transaction_type='recharge'
+        WHERE user_id=%s AND transaction_type='recharge' AND payment_status='paid'
         """,
         (user_id,),
     )
     total_recharged = float(cur.fetchone()[0] or 0)
+
+    cur.execute(
+        """
+        SELECT COALESCE(SUM(amount), 0)
+        FROM agent_wallet_transactions
+        WHERE user_id=%s AND transaction_type='recharge' AND payment_status='pending'
+        """,
+        (user_id,),
+    )
+    pending_recharge = float(cur.fetchone()[0] or 0)
     cur.close()
 
     return {
         "wallet_enabled": True,
         "total_recharged": round(total_recharged, 2),
+        "pending_recharge": round(pending_recharge, 2),
         "remaining_balance": round(total_recharged - used_amount, 2),
         "used_amount": round(used_amount, 2),
     }
 
 
-def add_wallet_recharge(user_id, amount, note="Manual wallet recharge"):
+def get_wallet_transactions_for_user(user_id, limit=12):
+    columns = get_wallet_transaction_columns()
+    if not columns:
+        return []
+
+    select_fields = ["id"]
+    select_fields.append("payment_reference" if "payment_reference" in columns else "'' AS payment_reference")
+    select_fields.append("amount" if "amount" in columns else "0 AS amount")
+    select_fields.append("transaction_type" if "transaction_type" in columns else "'recharge' AS transaction_type")
+    select_fields.append("payment_status" if "payment_status" in columns else "'pending' AS payment_status")
+    select_fields.append("gateway_payment_id" if "gateway_payment_id" in columns else "'' AS gateway_payment_id")
+    select_fields.append("note" if "note" in columns else "'' AS note")
+    select_fields.append("created_at" if "created_at" in columns else "NOW() AS created_at")
+    select_fields.append("paid_at" if "paid_at" in columns else "NULL AS paid_at")
+
+    cur = mysql.connection.cursor()
+    cur.execute(
+        f"""
+        SELECT {', '.join(select_fields)}
+        FROM agent_wallet_transactions
+        WHERE user_id=%s
+        ORDER BY id DESC
+        LIMIT %s
+        """,
+        (user_id, limit),
+    )
+    rows = cur.fetchall()
+    cur.close()
+
+    transactions = []
+    for row in rows:
+        transactions.append(
+            {
+                "id": row[0],
+                "payment_reference": row[1] or "",
+                "amount": float(row[2] or 0),
+                "transaction_type": row[3] or "",
+                "payment_status": row[4] or "pending",
+                "gateway_payment_id": row[5] or "",
+                "note": row[6] or "",
+                "created_at": format_dt(row[7]),
+                "paid_at": format_dt(row[8]) if row[8] else "",
+            }
+        )
+
+    return transactions
+
+
+def set_ui_message(message, message_type="info"):
+    session["ui_message"] = message
+    session["ui_message_type"] = message_type
+
+
+def pop_ui_message():
+    message = session.pop("ui_message", "")
+    message_type = session.pop("ui_message_type", "")
+    return message, message_type
+
+
+def create_wallet_recharge_request(user_id, amount, note=None):
+    columns = get_wallet_transaction_columns()
+    if not columns:
+        return False, "Please create `agent_wallet_transactions` table first.", None
+
+    payment_reference = f"AWT-{uuid.uuid4().hex[:16].upper()}"
+    note = note or f"Wallet recharge request of Rs {amount:.2f}"
+
+    insert_columns = []
+    values = []
+
+    field_map = [
+        ("user_id", user_id),
+        ("payment_reference", payment_reference),
+        ("amount", amount),
+        ("transaction_type", "recharge"),
+        ("payment_status", "pending"),
+        ("note", note),
+        ("gateway_name", "razorpay"),
+    ]
+
+    for column_name, value in field_map:
+        if column_name in columns:
+            insert_columns.append(column_name)
+            values.append(value)
+
+    if "user_id" not in insert_columns or "amount" not in insert_columns:
+        return False, "Wallet table structure is incomplete. Please update `agent_wallet_transactions` table.", None
+
+    cur = mysql.connection.cursor()
+    placeholders = ", ".join(["%s"] * len(insert_columns))
+    cur.execute(
+        f"INSERT INTO agent_wallet_transactions({', '.join(insert_columns)}) VALUES({placeholders})",
+        tuple(values),
+    )
+    mysql.connection.commit()
+    cur.close()
+    return True, "Recharge request created.", payment_reference
+
+
+def update_wallet_gateway_link(payment_reference, gateway_link_id, gateway_link_url, gateway_payload=""):
+    columns = get_wallet_transaction_columns()
+    if not columns:
+        return
+
+    updates = []
+    values = []
+    if "gateway_link_id" in columns:
+        updates.append("gateway_link_id=%s")
+        values.append(gateway_link_id)
+    if "gateway_link_url" in columns:
+        updates.append("gateway_link_url=%s")
+        values.append(gateway_link_url)
+    if "gateway_payload" in columns:
+        updates.append("gateway_payload=%s")
+        values.append(gateway_payload[:5000])
+    if "updated_at" in columns:
+        updates.append("updated_at=NOW()")
+
+    if not updates:
+        return
+
+    cur = mysql.connection.cursor()
+    cur.execute(
+        f"UPDATE agent_wallet_transactions SET {', '.join(updates)} WHERE payment_reference=%s",
+        tuple(values + [payment_reference]),
+    )
+    mysql.connection.commit()
+    cur.close()
+
+
+def get_wallet_transaction(payment_reference):
+    columns = get_wallet_transaction_columns()
+    if not columns:
+        return None
+
+    select_fields = ["id"]
+    select_fields.append("user_id" if "user_id" in columns else "0 AS user_id")
+    select_fields.append("payment_reference" if "payment_reference" in columns else "'' AS payment_reference")
+    select_fields.append("amount" if "amount" in columns else "0 AS amount")
+    select_fields.append("payment_status" if "payment_status" in columns else "'pending' AS payment_status")
+    select_fields.append("gateway_payment_id" if "gateway_payment_id" in columns else "'' AS gateway_payment_id")
+    select_fields.append("gateway_link_id" if "gateway_link_id" in columns else "'' AS gateway_link_id")
+    select_fields.append("gateway_link_url" if "gateway_link_url" in columns else "'' AS gateway_link_url")
+
+    cur = mysql.connection.cursor()
+    cur.execute(
+        f"""
+        SELECT {', '.join(select_fields)}
+        FROM agent_wallet_transactions
+        WHERE payment_reference=%s
+        LIMIT 1
+        """,
+        (payment_reference,),
+    )
+    row = cur.fetchone()
+    cur.close()
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "user_id": row[1],
+        "payment_reference": row[2],
+        "amount": float(row[3] or 0),
+        "payment_status": row[4] or "pending",
+        "gateway_payment_id": row[5] or "",
+        "gateway_link_id": row[6] or "",
+        "gateway_link_url": row[7] or "",
+    }
+
+
+def razorpay_enabled():
+    return bool(RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET)
+
+
+def razorpay_request(method, path, payload=None):
+    if not razorpay_enabled():
+        raise ValueError("Razorpay keys are missing. Add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in .env")
+
+    url = f"{RAZORPAY_API_URL.rstrip('/')}/{path.lstrip('/')}"
+    auth_token = base64.b64encode(f"{RAZORPAY_KEY_ID}:{RAZORPAY_KEY_SECRET}".encode("utf-8")).decode("utf-8")
+    request_data = None
+    headers = {
+        "Authorization": f"Basic {auth_token}",
+        "Content-Type": "application/json",
+    }
+
+    if payload is not None:
+        request_data = json.dumps(payload).encode("utf-8")
+
+    req = Request(url, data=request_data, headers=headers, method=method.upper())
+    with urlopen(req, timeout=20) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def create_razorpay_payment_link(user_id, payment_reference, amount):
+    callback_url = url_for("wallet_payment_callback", _external=True)
+    payload = {
+        "amount": int(round(amount * 100)),
+        "currency": "INR",
+        "accept_partial": False,
+        "description": f"Wallet recharge for user {user_id}",
+        "reference_id": payment_reference,
+        "callback_url": callback_url,
+        "callback_method": "get",
+        "notes": {
+            "user_id": str(user_id),
+            "payment_reference": payment_reference,
+        },
+    }
+    response = razorpay_request("POST", "/payment_links", payload)
+    return {
+        "id": response.get("id", ""),
+        "short_url": response.get("short_url", ""),
+        "status": response.get("status", ""),
+        "payload": json.dumps(response),
+    }
+
+
+def verify_razorpay_callback_signature(payment_link_id, payment_reference, payment_status, payment_id, signature):
+    body = f"{payment_link_id}|{payment_reference}|{payment_status}|{payment_id}"
+    expected = hmac.new(
+        RAZORPAY_KEY_SECRET.encode("utf-8"),
+        body.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return hmac.compare_digest(expected, signature or "")
+
+
+def fetch_razorpay_payment_link(payment_link_id):
+    return razorpay_request("GET", f"/payment_links/{payment_link_id}")
+
+
+def update_wallet_transaction_status(
+    payment_reference,
+    payment_status,
+    gateway_payment_id="",
+    gateway_order_id="",
+    gateway_signature="",
+    gateway_payload="",
+):
     columns = get_wallet_transaction_columns()
     if not columns:
         return False, "Please create `agent_wallet_transactions` table first."
 
+    if payment_status not in {"pending", "paid", "failed"}:
+        return False, "Invalid payment status."
+
     cur = mysql.connection.cursor()
     cur.execute(
         """
-        INSERT INTO agent_wallet_transactions(user_id, amount, transaction_type, note)
-        VALUES(%s, %s, 'recharge', %s)
+        SELECT id, payment_status
+        FROM agent_wallet_transactions
+        WHERE payment_reference=%s
+        LIMIT 1
         """,
-        (user_id, amount, note),
+        (payment_reference,),
+    )
+    row = cur.fetchone()
+
+    if not row:
+        cur.close()
+        return False, "Payment reference not found."
+
+    if row[1] == "paid" and payment_status == "failed":
+        cur.close()
+        return False, "Paid transaction cannot be marked failed."
+
+    cur.execute(
+        """
+        UPDATE agent_wallet_transactions
+        SET payment_status=%s,
+            gateway_payment_id=%s,
+            gateway_order_id=%s,
+            gateway_signature=%s,
+            gateway_payload=%s,
+            paid_at=CASE WHEN %s='paid' THEN NOW() ELSE paid_at END,
+            updated_at=NOW()
+        WHERE payment_reference=%s
+        """,
+        (
+            payment_status,
+            gateway_payment_id,
+            gateway_order_id,
+            gateway_signature,
+            gateway_payload[:5000],
+            payment_status,
+            payment_reference,
+        ),
     )
     mysql.connection.commit()
     cur.close()
-    return True, "Wallet recharged successfully."
+    return True, "Transaction updated successfully."
+
+
+def build_wallet_redirect_url(payment_reference, amount):
+    success_url = url_for("wallet_payment_success", _external=True)
+    failed_url = url_for("wallet_payment_failed", _external=True)
+    query = urlencode(
+        {
+            "amount": f"{amount:.2f}",
+            "payment_reference": payment_reference,
+            "redirect_success": success_url,
+            "redirect_failed": failed_url,
+        }
+    )
+    separator = "&" if "?" in WALLET_RECHARGE_URL else "?"
+    return f"{WALLET_RECHARGE_URL}{separator}{query}"
 
 
 def get_filtered_call_records(user_id):
@@ -403,11 +882,13 @@ def get_filtered_call_records(user_id):
                 "billable_minutes": 0,
                 "billed_amount": 0,
                 "wallet_recharged": wallet["total_recharged"],
+                "wallet_pending": wallet["pending_recharge"],
                 "wallet_remaining": wallet["remaining_balance"],
             },
             "customer_summary": [],
             "records": [],
             "wallet": wallet,
+            "transactions": get_wallet_transactions_for_user(user_id),
         }
 
     assigned_number = normalize_phone(approved_agent["assigned_number"]) if approved_agent else ""
@@ -480,11 +961,13 @@ def get_filtered_call_records(user_id):
             "billable_minutes": total_billable_minutes,
             "billed_amount": total_billed_amount,
             "wallet_recharged": wallet["total_recharged"],
+            "wallet_pending": wallet["pending_recharge"],
             "wallet_remaining": wallet["remaining_balance"],
         },
         "customer_summary": summary_rows,
         "records": records,
         "wallet": wallet,
+        "transactions": get_wallet_transactions_for_user(user_id),
     }
 
 
@@ -492,6 +975,7 @@ def get_dashboard_payload(user_id):
     calls = fetch_calls_for_user(user_id, limit=10)
     all_calls = fetch_calls_for_user(user_id)
     approved_agent = get_current_agent_profile(user_id)
+    transfer_settings = get_transfer_settings(user_id)
     try:
         call_record_data = get_filtered_call_records(user_id)
     except ValueError:
@@ -521,6 +1005,8 @@ def get_dashboard_payload(user_id):
         "credential_id": approved_agent["credential_id"] if approved_agent else "",
         "talk_minutes": call_record_data["summary"]["talk_minutes"],
         "wallet_remaining": call_record_data["summary"]["wallet_remaining"],
+        "transfer_enabled": transfer_settings["enabled"],
+        "transfer_number": transfer_settings["transfer_number"],
     }
 
     if stats["total"]:
@@ -532,7 +1018,194 @@ def get_dashboard_payload(user_id):
         "stats": stats,
         "calls": calls,
         "agent": approved_agent,
+        "transfer_settings": transfer_settings,
         "call_record_summary": call_record_data["summary"],
+    }
+
+
+def fetch_all_credentials():
+    columns = get_agent_checker_columns()
+    if not columns:
+        return []
+
+    cur = mysql.connection.cursor()
+    cur.execute(
+        """
+        SELECT id, credential_id, assigned_number, sip_user, active, is_approved, approved_user_id, approved_at
+        FROM agent_checker
+        ORDER BY id DESC
+        """
+    )
+    rows = cur.fetchall()
+    cur.close()
+    credentials = []
+    for row in rows:
+        credentials.append(
+            {
+                "id": row[0],
+                "credential_id": row[1] or "",
+                "assigned_number": row[2] or "",
+                "sip_user": row[3] or "",
+                "active": bool(row[4]),
+                "is_approved": bool(row[5]),
+                "approved_user_id": row[6] or "",
+                "approved_at": format_dt(row[7]) if row[7] else "",
+            }
+        )
+    return credentials
+
+
+def fetch_all_wallet_transactions(limit=200):
+    columns = get_wallet_transaction_columns()
+    if not columns:
+        return []
+
+    cur = mysql.connection.cursor()
+    cur.execute(
+        """
+        SELECT wt.id, wt.user_id, u.name, u.email, wt.payment_reference, wt.amount, wt.transaction_type,
+               wt.payment_status, wt.gateway_name, wt.gateway_link_id, wt.gateway_payment_id, wt.created_at, wt.paid_at
+        FROM agent_wallet_transactions wt
+        LEFT JOIN agent_users u ON u.id = wt.user_id
+        ORDER BY wt.id DESC
+        LIMIT %s
+        """,
+        (limit,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "id": row[0],
+                "user_id": row[1],
+                "user_name": row[2] or "",
+                "user_email": row[3] or "",
+                "payment_reference": row[4] or "",
+                "amount": float(row[5] or 0),
+                "transaction_type": row[6] or "",
+                "payment_status": row[7] or "pending",
+                "gateway_name": row[8] or "",
+                "gateway_link_id": row[9] or "",
+                "gateway_payment_id": row[10] or "",
+                "created_at": format_dt(row[11]),
+                "paid_at": format_dt(row[12]) if row[12] else "",
+            }
+        )
+    return items
+
+
+def create_agent_credential(payload):
+    columns = get_agent_checker_columns()
+    if not columns:
+        return False, "agent_checker table not found."
+
+    insert_columns = []
+    values = []
+
+    field_map = [
+        ("credential_id", payload.get("credential_id", "").strip()),
+        ("credential_password", payload.get("credential_password", "").strip()),
+        ("assigned_number", payload.get("assigned_number", "").strip()),
+        ("sip_user", payload.get("sip_user", "").strip()),
+        ("sip_pass", payload.get("sip_pass", "").strip()),
+    ]
+
+    for column_name, value in field_map:
+        if column_name in columns:
+            insert_columns.append(column_name)
+            values.append(value)
+
+    if "active" in columns:
+        insert_columns.append("active")
+        values.append(1 if payload.get("active", True) else 0)
+
+    if "is_approved" in columns:
+        insert_columns.append("is_approved")
+        values.append(0)
+
+    if not insert_columns or "credential_id" not in insert_columns:
+        return False, "Required credential columns are missing in agent_checker."
+
+    placeholders = ", ".join(["%s"] * len(insert_columns))
+    cur = mysql.connection.cursor()
+    cur.execute(
+        f"INSERT INTO agent_checker({', '.join(insert_columns)}) VALUES({placeholders})",
+        tuple(values),
+    )
+    mysql.connection.commit()
+    cur.close()
+    return True, "Credential added successfully."
+
+
+def create_support_request(user_id, page_name, issue, expected_outcome, note):
+    columns = get_support_request_columns()
+    if not columns:
+        return False, "Please create `agent_support_requests` table first."
+
+    cur = mysql.connection.cursor()
+    cur.execute(
+        """
+        INSERT INTO agent_support_requests(user_id, page_name, issue, expected_outcome, note, status)
+        VALUES(%s, %s, %s, %s, %s, 'open')
+        """,
+        (user_id, page_name[:50], issue[:255], expected_outcome[:255], note[:1000]),
+    )
+    mysql.connection.commit()
+    cur.close()
+    return True, "Support request created."
+
+
+def fetch_support_requests(limit=50):
+    columns = get_support_request_columns()
+    if not columns:
+        return []
+
+    cur = mysql.connection.cursor()
+    cur.execute(
+        """
+        SELECT sr.id, sr.user_id, u.name, u.email, sr.page_name, sr.issue, sr.expected_outcome, sr.note, sr.status, sr.created_at
+        FROM agent_support_requests sr
+        LEFT JOIN agent_users u ON u.id = sr.user_id
+        ORDER BY sr.id DESC
+        LIMIT %s
+        """,
+        (limit,),
+    )
+    rows = cur.fetchall()
+    cur.close()
+    requests_list = []
+    for row in rows:
+        requests_list.append(
+            {
+                "id": row[0],
+                "user_id": row[1],
+                "user_name": row[2] or "",
+                "user_email": row[3] or "",
+                "page_name": row[4] or "",
+                "issue": row[5] or "",
+                "expected_outcome": row[6] or "",
+                "note": row[7] or "",
+                "status": row[8] or "open",
+                "created_at": format_dt(row[9]),
+            }
+        )
+    return requests_list
+
+
+def get_admin_dashboard_payload():
+    return {
+        "users": fetch_all_users(),
+        "credentials": fetch_all_credentials(),
+        "support_requests": fetch_support_requests(),
+    }
+
+
+def get_admin_payments_payload():
+    return {
+        "transactions": fetch_all_wallet_transactions(),
     }
 
 
@@ -547,12 +1220,61 @@ def schedule_call_job(call_id, phone, schedule_time):
     )
 
 
+def restore_scheduled_calls():
+    columns = get_agent_call_columns()
+    if not columns or "schedule_time" not in columns or "status" not in columns:
+        return
+
+    cur = mysql.connection.cursor()
+    try:
+        cur.execute(
+            """
+            SELECT id, phone, schedule_time
+            FROM agent_calls
+            WHERE status=%s
+            ORDER BY schedule_time ASC, id ASC
+            """,
+            ("scheduled",),
+        )
+        rows = cur.fetchall()
+    finally:
+        cur.close()
+
+    now = datetime.now()
+    for row in rows:
+        call_id, phone, schedule_time = row
+        if not phone or schedule_time is None:
+            continue
+
+        if schedule_time <= now:
+            update_call_record(call_id, "rejected", "Scheduled time passed before the call could be started.")
+            continue
+
+        schedule_call_job(call_id, phone, schedule_time)
+
+
+def start_scheduler_once():
+    global _scheduler_bootstrapped
+
+    if _scheduler_bootstrapped or not SCHEDULER_ENABLED:
+        return
+
+    with app.app_context():
+        if not scheduler.running:
+            scheduler.start()
+
+        restore_scheduled_calls()
+        _scheduler_bootstrapped = True
+
+
 def run_call(call_id, phone):
     with app.app_context():
         update_call_record(call_id, "calling", "Dispatching AI agent.")
 
+    command = [sys.executable, "make_call.py", "--to", phone, "--call-id", str(call_id)]
+
     result = subprocess.run(
-        [sys.executable, "make_call.py", "--to", phone, "--call-id", str(call_id)],
+        command,
         capture_output=True,
         text=True,
         cwd=os.path.dirname(os.path.abspath(__file__)),
@@ -561,7 +1283,7 @@ def run_call(call_id, phone):
     if result.returncode != 0:
         error_text = (result.stderr or result.stdout or "Call dispatch failed.").strip()
         with app.app_context():
-            update_call_record(call_id, "failed", error_text)
+            update_call_record(call_id, "rejected", error_text)
 
 
 def require_approved_agent():
@@ -652,25 +1374,45 @@ def login():
         email = request.form["email"]
         password = request.form["password"]
 
-        cur = mysql.connection.cursor()
-        cur.execute(
-            "SELECT * FROM agent_users WHERE email=%s AND password=%s",
-            (email, password),
-        )
-        user = cur.fetchone()
-        cur.close()
-
-        if user:
-            session["user"] = user[0]
+        user = get_agent_user_by_email(email)
+        if user and user["password"] == password and user["is_active"]:
+            session["user"] = user["id"]
             return redirect("/dashboard")
+        set_ui_message("Invalid email or password. Please try again.", "error")
 
-    return render_template("login.html")
+    message, message_type = pop_ui_message()
+    return render_template("login.html", message=message, message_type=message_type)
 
 
 @app.route("/logout")
 def logout():
     session.clear()
     return redirect("/login")
+
+
+@app.route("/admin/login", methods=["GET", "POST"])
+def admin_login():
+    if request.method == "POST":
+        email = request.form["email"]
+        password = request.form["password"]
+        user = get_agent_user_by_email(email)
+
+        if user and user["password"] == password and user["is_active"] and is_admin_record(user):
+            session["admin_user"] = user["id"]
+            session["admin_name"] = user["name"]
+            return redirect("/admin/dashboard")
+
+        set_ui_message("Admin login failed. Check role, active status, email, and password.", "error")
+
+    message, message_type = pop_ui_message()
+    return render_template("admin_login.html", message=message, message_type=message_type)
+
+
+@app.route("/admin/logout")
+def admin_logout():
+    session.pop("admin_user", None)
+    session.pop("admin_name", None)
+    return redirect("/admin/login")
 
 
 @app.route("/register", methods=["GET", "POST"])
@@ -680,17 +1422,61 @@ def register():
         email = request.form["email"]
         password = request.form["password"]
 
+        columns = get_agent_user_columns()
         cur = mysql.connection.cursor()
+        cur.execute("SELECT id FROM agent_users WHERE email=%s LIMIT 1", (email,))
+        existing_user = cur.fetchone()
+        if existing_user:
+            cur.close()
+            set_ui_message("This email is already registered. Please login instead.", "error")
+            return redirect("/register")
+
+        insert_columns = ["name", "email", "password"]
+        placeholders = ["%s", "%s", "%s"]
+        values = [name, email, password]
+        if "role" in columns:
+            insert_columns.append("role")
+            placeholders.append("%s")
+            values.append("user")
+        if "is_admin" in columns:
+            insert_columns.append("is_admin")
+            placeholders.append("%s")
+            values.append(0)
+        if "is_active" in columns:
+            insert_columns.append("is_active")
+            placeholders.append("%s")
+            values.append(1)
+
         cur.execute(
-            "INSERT INTO agent_users(name,email,password) VALUES(%s,%s,%s)",
-            (name, email, password),
+            f"INSERT INTO agent_users({', '.join(insert_columns)}) VALUES({', '.join(placeholders)})",
+            tuple(values),
         )
         mysql.connection.commit()
         cur.close()
 
+        set_ui_message("Registration completed. Please login to continue.", "success")
         return redirect("/login")
 
-    return render_template("register.html")
+    message, message_type = pop_ui_message()
+    return render_template("register.html", message=message, message_type=message_type)
+
+
+@app.route("/support_request", methods=["POST"])
+def support_request():
+    if not login_required():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    data = request.get_json(silent=True) or {}
+    issue = (data.get("issue") or "").strip()
+    expected_outcome = (data.get("expected_outcome") or "").strip()
+    page_name = (data.get("page_name") or "dashboard").strip()
+    note = (data.get("note") or "").strip()
+
+    if not issue or not expected_outcome:
+        return jsonify({"ok": False, "error": "Issue and expected outcome are required."}), 400
+
+    success, message = create_support_request(session["user"], page_name, issue, expected_outcome, note)
+    return jsonify({"ok": success, "message": message}), 200 if success else 400
 
 
 @app.route("/dashboard")
@@ -699,7 +1485,162 @@ def dashboard():
         return redirect("/login")
 
     payload = get_dashboard_payload(session["user"])
-    return render_template("dashboard.html", payload=payload)
+    message, message_type = pop_ui_message()
+    return render_template("dashboard.html", payload=payload, message=message, message_type=message_type)
+
+
+@app.route("/admin/dashboard")
+def admin_dashboard():
+    if not admin_login_required():
+        return redirect("/admin/login")
+
+    payload = get_admin_dashboard_payload()
+    message, message_type = pop_ui_message()
+    return render_template("admin_dashboard.html", payload=payload, message=message, message_type=message_type)
+
+
+@app.route("/admin/payments")
+def admin_payments():
+    if not admin_login_required():
+        return redirect("/admin/login")
+
+    payload = get_admin_payments_payload()
+    message, message_type = pop_ui_message()
+    return render_template("admin_payments.html", payload=payload, message=message, message_type=message_type)
+
+
+@app.route("/admin/dashboard_data")
+def admin_dashboard_data():
+    if not admin_login_required():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    return jsonify({"ok": True, "payload": get_admin_dashboard_payload()})
+
+
+@app.route("/admin/payments_data")
+def admin_payments_data():
+    if not admin_login_required():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+    return jsonify({"ok": True, "payload": get_admin_payments_payload()})
+
+
+@app.route("/admin/user/<int:user_id>/update", methods=["POST"])
+def admin_update_user(user_id):
+    if not admin_login_required():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    columns = get_agent_user_columns()
+    if not columns:
+        return jsonify({"ok": False, "error": "agent_users table not found."}), 400
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    email = (data.get("email") or "").strip()
+    role = (data.get("role") or "user").strip().lower()
+    is_active = 1 if data.get("is_active", True) else 0
+
+    updates = []
+    values = []
+    if "name" in columns and name:
+        updates.append("name=%s")
+        values.append(name)
+    if "email" in columns and email:
+        updates.append("email=%s")
+        values.append(email)
+    if "role" in columns:
+        updates.append("role=%s")
+        values.append("admin" if role == "admin" else "user")
+    if "is_admin" in columns:
+        updates.append("is_admin=%s")
+        values.append(1 if role == "admin" else 0)
+    if "is_active" in columns:
+        updates.append("is_active=%s")
+        values.append(is_active)
+
+    if not updates:
+        return jsonify({"ok": False, "error": "No editable admin columns found on agent_users."}), 400
+
+    values.append(user_id)
+    cur = mysql.connection.cursor()
+    cur.execute(f"UPDATE agent_users SET {', '.join(updates)} WHERE id=%s", tuple(values))
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({"ok": True, "message": "User updated successfully."})
+
+
+@app.route("/admin/credential/<int:credential_row_id>/update", methods=["POST"])
+def admin_update_credential(credential_row_id):
+    if not admin_login_required():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    if not get_agent_checker_columns():
+        return jsonify({"ok": False, "error": "agent_checker table not found."}), 400
+
+    data = request.get_json(silent=True) or {}
+    active = 1 if data.get("active", True) else 0
+    approved_user_id = data.get("approved_user_id")
+    action = (data.get("action") or "").strip().lower()
+
+    cur = mysql.connection.cursor()
+    cur.execute("UPDATE agent_checker SET active=%s WHERE id=%s", (active, credential_row_id))
+
+    if action == "revoke":
+        cur.execute(
+            """
+            UPDATE agent_checker
+            SET is_approved=0, approved_user_id=NULL, approved_at=NULL
+            WHERE id=%s
+            """,
+            (credential_row_id,),
+        )
+    elif approved_user_id:
+        cur.execute(
+            """
+            UPDATE agent_checker
+            SET is_approved=1, approved_user_id=%s, approved_at=NOW()
+            WHERE id=%s
+            """,
+            (approved_user_id, credential_row_id),
+        )
+
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({"ok": True, "message": "Credential updated successfully."})
+
+
+@app.route("/admin/credential/create", methods=["POST"])
+def admin_create_credential():
+    if not admin_login_required():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    data = request.get_json(silent=True) or {}
+    if not (data.get("credential_id") or "").strip():
+        return jsonify({"ok": False, "error": "Credential ID is required."}), 400
+
+    success, message = create_agent_credential(data)
+    return jsonify({"ok": success, "message": message}), 200 if success else 400
+
+
+@app.route("/admin/support/<int:ticket_id>/update", methods=["POST"])
+def admin_update_support(ticket_id):
+    if not admin_login_required():
+        return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+    if not get_support_request_columns():
+        return jsonify({"ok": False, "error": "agent_support_requests table not found."}), 400
+
+    data = request.get_json(silent=True) or {}
+    status = (data.get("status") or "open").strip().lower()
+    if status not in {"open", "in_progress", "resolved", "closed"}:
+        return jsonify({"ok": False, "error": "Invalid support status."}), 400
+
+    cur = mysql.connection.cursor()
+    cur.execute(
+        "UPDATE agent_support_requests SET status=%s, updated_at=NOW() WHERE id=%s",
+        (status, ticket_id),
+    )
+    mysql.connection.commit()
+    cur.close()
+    return jsonify({"ok": True, "message": "Support ticket updated successfully."})
 
 
 @app.route("/dashboard_data")
@@ -725,15 +1666,24 @@ def call_detail_record():
                 "billable_minutes": 0,
                 "billed_amount": 0,
                 "wallet_recharged": 0,
+                "wallet_pending": 0,
                 "wallet_remaining": 0,
             },
             "customer_summary": [],
             "records": [],
             "wallet": {"wallet_enabled": bool(get_wallet_transaction_columns())},
+            "transactions": [],
         }
         load_error = str(exc)
 
-    return render_template("call_detail_record.html", payload=payload, load_error=load_error)
+    message, message_type = pop_ui_message()
+    return render_template(
+        "call_detail_record.html",
+        payload=payload,
+        load_error=load_error,
+        message=message,
+        message_type=message_type,
+    )
 
 
 @app.route("/call_detail_record_data")
@@ -752,7 +1702,11 @@ def wallet_recharge():
     if not login_required():
         return jsonify({"ok": False, "error": "Unauthorized"}), 401
 
-    amount_raw = (request.get_json(silent=True) or {}).get("amount")
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return jsonify({"ok": False, "error": "Invalid request body. Please refresh the page and try again."}), 400
+
+    amount_raw = payload.get("amount")
     try:
         amount = float(amount_raw)
     except (TypeError, ValueError):
@@ -761,9 +1715,188 @@ def wallet_recharge():
     if amount <= 0:
         return jsonify({"ok": False, "error": "Recharge amount must be greater than zero."}), 400
 
-    success, message = add_wallet_recharge(session["user"], amount)
-    status = 200 if success else 400
-    return jsonify({"ok": success, "message": message}), status
+    if amount < MIN_RECHARGE_AMOUNT or amount > MAX_RECHARGE_AMOUNT:
+        return (
+            jsonify(
+                {
+                    "ok": False,
+                    "error": f"Recharge amount must be between Rs {MIN_RECHARGE_AMOUNT:.0f} and Rs {MAX_RECHARGE_AMOUNT:.0f}.",
+                }
+            ),
+            400,
+        )
+
+    try:
+        success, message, payment_reference = create_wallet_recharge_request(session["user"], amount)
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Wallet transaction could not be created: {exc}"}), 500
+    if not success:
+        return jsonify({"ok": False, "error": message}), 400
+
+    try:
+        if razorpay_enabled():
+            payment_link = create_razorpay_payment_link(session["user"], payment_reference, amount)
+            update_wallet_gateway_link(
+                payment_reference=payment_reference,
+                gateway_link_id=payment_link["id"],
+                gateway_link_url=payment_link["short_url"],
+                gateway_payload=payment_link["payload"],
+            )
+            return (
+                jsonify(
+                    {
+                        "ok": True,
+                        "message": "Payment link created successfully.",
+                        "payment_reference": payment_reference,
+                        "redirect_url": payment_link["short_url"],
+                    }
+                ),
+                200,
+            )
+    except Exception as exc:
+        update_wallet_transaction_status(payment_reference, "failed", gateway_payload=str(exc))
+        return jsonify({"ok": False, "error": f"Unable to create Razorpay payment link: {exc}"}), 502
+
+    return (
+        jsonify(
+            {
+                "ok": True,
+                "message": "Razorpay API keys not configured. Using fallback recharge URL.",
+                "payment_reference": payment_reference,
+                "redirect_url": build_wallet_redirect_url(payment_reference, amount),
+            }
+        ),
+        200,
+    )
+
+
+@app.route("/wallet/payment/callback", methods=["GET"])
+def wallet_payment_callback():
+    payment_reference = (request.args.get("razorpay_payment_link_reference_id") or "").strip()
+    payment_link_id = (request.args.get("razorpay_payment_link_id") or "").strip()
+    payment_status = (request.args.get("razorpay_payment_link_status") or "").strip().lower()
+    payment_id = (request.args.get("razorpay_payment_id") or "").strip()
+    signature = (request.args.get("razorpay_signature") or "").strip()
+
+    transaction = get_wallet_transaction(payment_reference)
+    if not transaction:
+        set_ui_message("Payment callback received, but transaction reference was not found.", "error")
+        return redirect("/call-detail-record")
+
+    if not razorpay_enabled():
+        set_ui_message("Razorpay keys are missing, so payment verification could not be completed.", "error")
+        return redirect("/call-detail-record")
+
+    if not verify_razorpay_callback_signature(
+        payment_link_id=payment_link_id,
+        payment_reference=payment_reference,
+        payment_status=payment_status,
+        payment_id=payment_id,
+        signature=signature,
+    ):
+        update_wallet_transaction_status(
+            payment_reference=payment_reference,
+            payment_status="failed",
+            gateway_payment_id=payment_id,
+            gateway_payload=str(request.args.to_dict()),
+        )
+        set_ui_message("Payment signature verification failed. No wallet amount was added.", "error")
+        return redirect("/call-detail-record")
+
+    try:
+        payment_link = fetch_razorpay_payment_link(payment_link_id)
+    except Exception as exc:
+        set_ui_message(f"Unable to confirm payment with Razorpay: {exc}", "error")
+        return redirect("/call-detail-record")
+
+    amount_paid = float(payment_link.get("amount_paid", 0) or 0) / 100
+    verified_paid = (
+        payment_link.get("status") == "paid"
+        and payment_link.get("reference_id") == payment_reference
+        and amount_paid >= transaction["amount"]
+    )
+
+    if verified_paid:
+        update_wallet_transaction_status(
+            payment_reference=payment_reference,
+            payment_status="paid",
+            gateway_payment_id=payment_id,
+            gateway_order_id=payment_link.get("order_id", ""),
+            gateway_signature=signature,
+            gateway_payload=json.dumps(payment_link),
+        )
+        set_ui_message("Payment verified successfully with Razorpay and added to wallet.", "success")
+        return redirect("/")
+
+    update_wallet_transaction_status(
+        payment_reference=payment_reference,
+        payment_status="failed",
+        gateway_payment_id=payment_id,
+        gateway_signature=signature,
+        gateway_payload=json.dumps(payment_link),
+    )
+    set_ui_message("Payment was not marked paid by Razorpay, so wallet was not credited.", "error")
+    return redirect("/call-detail-record")
+
+
+@app.route("/wallet/payment/success", methods=["GET", "POST"])
+def wallet_payment_success():
+    payment_reference = (request.values.get("payment_reference") or request.values.get("reference") or "").strip()
+    gateway_payment_id = (request.values.get("razorpay_payment_id") or request.values.get("payment_id") or "").strip()
+    gateway_order_id = (request.values.get("razorpay_order_id") or request.values.get("order_id") or "").strip()
+    gateway_signature = (request.values.get("razorpay_signature") or request.values.get("signature") or "").strip()
+
+    if not payment_reference:
+        if login_required():
+            set_ui_message("Payment success callback did not include a payment reference.", "error")
+            return redirect("/")
+        return jsonify({"ok": False, "error": "payment_reference is required."}), 400
+
+    success, message = update_wallet_transaction_status(
+        payment_reference=payment_reference,
+        payment_status="paid",
+        gateway_payment_id=gateway_payment_id,
+        gateway_order_id=gateway_order_id,
+        gateway_signature=gateway_signature,
+        gateway_payload=str(request.values.to_dict()),
+    )
+
+    if request.method == "POST":
+        return jsonify({"ok": success, "message": message}), 200 if success else 400
+
+    set_ui_message(
+        "Payment successful. Wallet balance has been updated." if success else message,
+        "success" if success else "error",
+    )
+    return redirect("/")
+
+
+@app.route("/wallet/payment/failed", methods=["GET", "POST"])
+def wallet_payment_failed():
+    payment_reference = (request.values.get("payment_reference") or request.values.get("reference") or "").strip()
+    gateway_payment_id = (request.values.get("razorpay_payment_id") or request.values.get("payment_id") or "").strip()
+
+    if not payment_reference:
+        if login_required():
+            set_ui_message("Payment was cancelled, but no payment reference was returned.", "error")
+            return redirect("/call-detail-record")
+        return jsonify({"ok": False, "error": "payment_reference is required."}), 400
+
+    success, message = update_wallet_transaction_status(
+        payment_reference=payment_reference,
+        payment_status="failed",
+        gateway_payment_id=gateway_payment_id,
+        gateway_payload=str(request.values.to_dict()),
+    )
+
+    if request.method == "POST":
+        return jsonify({"ok": success, "message": message}), 200 if success else 400
+
+    set_ui_message(
+        "Payment did not complete, so no amount was added to the wallet." if success else message,
+        "error",
+    )
+    return redirect("/call-detail-record")
 
 
 @app.route("/outbound", methods=["GET", "POST"])
@@ -782,7 +1915,13 @@ def outbound():
         schedule_single_call(session["user"], phone, schedule_time)
         return redirect("/outbound")
 
-    return render_template("outbound.html", approved_agent=approved_agent)
+    message, message_type = pop_ui_message()
+    return render_template(
+        "outbound.html",
+        approved_agent=approved_agent,
+        message=message,
+        message_type=message_type,
+    )
 
 
 @app.route("/schedule_call", methods=["POST"])
@@ -947,7 +2086,40 @@ def settings():
     )
 
 
+@app.route("/transfer-settings", methods=["GET", "POST"])
+def transfer_settings():
+    if not login_required():
+        return redirect("/login")
+
+    message = ""
+    message_type = ""
+
+    if request.method == "POST":
+        transfer_number = request.form.get("transfer_number", "").strip()
+        is_enabled = bool(request.form.get("is_enabled"))
+
+        if is_enabled and not transfer_number:
+            message = "Please enter a transfer number before enabling live transfer."
+            message_type = "error"
+        else:
+            success, message = save_transfer_settings(session["user"], transfer_number, is_enabled)
+            message_type = "success" if success else "error"
+
+    transfer_config = get_transfer_settings(session["user"])
+    approved_agent = get_current_agent_profile(session["user"])
+    return render_template(
+        "transfer_settings.html",
+        transfer_config=transfer_config,
+        approved_agent=approved_agent,
+        message=message,
+        message_type=message_type,
+    )
+
+
+start_scheduler_once()
+
+
 if __name__ == "__main__":
-    scheduler.start()
+    start_scheduler_once()
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)

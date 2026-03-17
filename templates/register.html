@@ -1,82 +1,69 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agent Register</title>
-<style>
-body{
-font-family:Arial;
-background:#0f172a;
-display:flex;
-align-items:center;
-justify-content:center;
-height:100vh;
-margin:0;
-color:white;
-}
-
-.card{
-background:#1e293b;
-padding:40px;
-border-radius:10px;
-width:340px;
-text-align:center;
-box-shadow:0 10px 30px rgba(0,0,0,0.5);
-}
-
-input{
-width:100%;
-padding:10px;
-margin:8px 0;
-border:none;
-border-radius:6px;
-}
-
-button{
-width:100%;
-padding:10px;
-background:#38bdf8;
-border:none;
-border-radius:6px;
-color:white;
-font-size:16px;
-cursor:pointer;
-}
-
-button:hover{
-background:#0ea5e9;
-}
-
-a{
-color:#38bdf8;
-text-decoration:none;
-}
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard-shell.css') }}">
 </head>
-
 <body>
 
-<div class="card">
+<div class="auth-shell">
+  <div class="auth-layout">
+    <section class="auth-showcase">
+      <div class="auth-kicker">SGI AIIOT Robotics</div>
+      <h1>Create your agent workspace</h1>
+      <p>Register a new account to manage AI calling campaigns, wallet top-ups, billing views, and agent approvals inside a cleaner software-style interface inspired by agent.sgiaiiotrobotics.com.</p>
 
-<h2>AI Agent Register</h2>
+      <div class="auth-points">
+        <div class="auth-point">
+          <strong>Payment tracking</strong>
+          Every recharge attempt can be stored as pending, paid, or failed for easier wallet reconciliation.
+        </div>
+        <div class="auth-point">
+          <strong>Clean onboarding</strong>
+          A sharper, more premium form layout that still feels fast and practical for daily operations.
+        </div>
+        <div class="auth-point">
+          <strong>Unified experience</strong>
+          The same premium black, orange, and blue software design now carries through the whole app.
+        </div>
+      </div>
+    </section>
 
-<form method="POST">
+    <section class="auth-card">
+      <h2>Create account</h2>
+      <p>Register once, then login and connect your approved agent credentials.</p>
 
-<input type="text" name="name" placeholder="Full Name" required>
+      {% if message %}
+      <div class="auth-message {{message_type or 'error'}}">{{message}}</div>
+      {% endif %}
 
-<input type="email" name="email" placeholder="Email" required>
+      <form method="POST">
+        <label for="name">Full Name</label>
+        <input id="name" type="text" name="name" placeholder="Enter your full name" required>
 
-<input type="password" name="password" placeholder="Password" required>
+        <label for="email">Email Address</label>
+        <input id="email" type="email" name="email" placeholder="Enter your email" required>
 
-<button type="submit">Register</button>
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password" placeholder="Create a password" required>
 
-</form>
+        <button type="submit">Register Account</button>
+      </form>
 
-<p style="margin-top:15px;">
-Already have an account? <a href="/login">Login</a>
-</p>
+      <div class="auth-links">
+        Already have an account? <a href="/login">Login here</a>
+      </div>
 
+      <div class="auth-footer">
+        <span>All rights reserved 2026 SGI AIIOT Robotics</span>
+        <span>Made with love in India</span>
+      </div>
+    </section>
+  </div>
 </div>
 
+<script src="{{ url_for('static', filename='app-shell.js') }}"></script>
 </body>
 </html>

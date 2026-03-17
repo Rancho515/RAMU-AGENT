@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Login</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard-shell.css') }}">
+</head>
+<body>
+
+<div class="auth-shell">
+  <div class="auth-layout">
+    <section class="auth-showcase">
+      <div class="auth-kicker">Admin Console</div>
+      <h1>SGI Operations Dashboard</h1>
+      <p>Use the admin console to verify wallet payments, manage all users, activate or revoke credentials, and monitor support requests in near realtime.</p>
+      <div class="auth-points">
+        <div class="auth-point"><strong>Users</strong> Edit name, email, role, and active status.</div>
+        <div class="auth-point"><strong>Credentials</strong> Activate, approve, and revoke agent assignments.</div>
+        <div class="auth-point"><strong>Support</strong> Track requests raised from the user-side support widget.</div>
+      </div>
+    </section>
+
+    <section class="auth-card">
+      <h2>Admin login</h2>
+      <p>Only accounts marked as admin and active can access this panel. The configured bootstrap admin email is <strong>pranjalsingh20032007@gmail.com</strong>.</p>
+      {% if message %}
+      <div class="auth-message {{message_type or 'error'}}">{{message}}</div>
+      {% endif %}
+      <form method="POST">
+        <label for="email">Email Address</label>
+        <input id="email" type="email" name="email" placeholder="Enter admin email" required>
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password" placeholder="Enter admin password" required>
+        <button type="submit">Open Admin Dashboard</button>
+      </form>
+      <div class="auth-footer">
+        <span>All rights reserved 2026 SGI AIIOT Robotics</span>
+        <span>Made with love in India</span>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='app-shell.js') }}"></script>
+</body>
+</html>

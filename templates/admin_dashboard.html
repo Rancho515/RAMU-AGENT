@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Dashboard</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard-shell.css') }}">
+<style>
+.admin-grid{display:grid;grid-template-columns:1fr;gap:20px;}
+.admin-card{padding:24px;overflow:hidden;}
+.admin-card h2{margin:0 0 8px;font-size:24px;}
+.admin-card p{margin:0;color:var(--shell-muted);line-height:1.6;}
+.admin-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px;}
+.admin-btn,.admin-select,.admin-input{
+padding:10px 12px;border-radius:12px;border:1px solid var(--shell-line);background:#0d0d0d;color:var(--shell-text);font:inherit;
+}
+.admin-btn{background:linear-gradient(135deg,#ff9933,#1ea7ff);color:#050505;font-weight:800;cursor:pointer;}
+.admin-btn.secondary{background:linear-gradient(135deg,#22a95a,#1ea7ff);}
+.admin-table-wrap{overflow:auto;margin-top:18px;}
+table{width:100%;border-collapse:collapse;}
+th,td{padding:14px 10px;text-align:left;border-bottom:1px solid rgba(255,153,51,0.1);vertical-align:top;}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#cbd5e1;}
+.status-pill{display:inline-flex;align-items:center;padding:7px 11px;border-radius:999px;font-size:12px;font-weight:700;}
+.status-open{background:rgba(255,153,51,0.12);color:#ffb66c;}
+.status-in_progress{background:rgba(0,240,255,0.12);color:#67e8f9;}
+.status-resolved,.status-active,.status-paid{background:rgba(34,197,94,0.12);color:#bbf7d0;}
+.status-closed,.status-inactive,.status-failed{background:rgba(239,68,68,0.12);color:#fecaca;}
+.inline-stack{display:grid;gap:8px;min-width:210px;}
+.mini-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-top:16px;}
+.admin-link{display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:#fff;}
+@media (max-width: 1080px){.mini-grid{grid-template-columns:1fr 1fr;}}
+</style>
+</head>
+<body>
+
+<div class="app-shell">
+  <aside class="app-sidebar">
+    <div class="brand-card">
+      <div class="brand-mark"><div class="brand-lines"><span></span><span></span><span></span></div></div>
+      <div class="brand-copy">
+        <strong>SGI ADMIN</strong>
+        <small>Users, credentials, wallet verification, and support operations</small>
+      </div>
+    </div>
+    <nav class="nav-links">
+      <a class="nav-link active" href="/admin/dashboard"><span class="nav-icon">&#8984;</span><span><span class="nav-label">Admin Dashboard</span><span class="nav-sublabel">Live control centre</span></span></a>
+      <a class="nav-link" href="/admin/payments"><span class="nav-icon">&#8377;</span><span><span class="nav-label">Payments</span><span class="nav-sublabel">Recharge transaction history</span></span></a>
+      <a class="nav-link" href="/dashboard"><span class="nav-icon">&#9638;</span><span><span class="nav-label">User App</span><span class="nav-sublabel">Open agent-facing product</span></span></a>
+    </nav>
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-footer">
+      <p>Keep one admin account active so user, credential, and support operations stay accessible.</p>
+      <a class="logout-link" href="/admin/logout">Admin Logout</a>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div class="content-shell">
+      <div class="page-hero">
+        <div>
+          <h1>Admin Dashboard</h1>
+          <p>Manage all users, agent credentials, and support requests. This page refreshes from the backend so admins can monitor operational changes quickly.</p>
+        </div>
+        <div class="hero-chip">Refresh every 8 seconds</div>
+      </div>
+
+      {% if message %}
+      <div class="page-banner {{message_type}}">{{message}}</div>
+      {% endif %}
+
+      <div class="admin-grid">
+        <section class="surface admin-card">
+          <h2>Add New Credential</h2>
+          <p>Create a new `agent_checker` credential directly from the admin panel.</p>
+          <div class="mini-grid">
+            <input class="admin-input" id="new-credential-id" placeholder="Credential ID">
+            <input class="admin-input" id="new-credential-password" placeholder="Credential Password">
+            <input class="admin-input" id="new-assigned-number" placeholder="Assigned Number">
+            <input class="admin-input" id="new-sip-user" placeholder="SIP User">
+            <input class="admin-input" id="new-sip-pass" placeholder="SIP Password">
+          </div>
+          <div class="admin-actions">
+            <button class="admin-btn secondary" onclick="createCredential()">Add Credential</button>
+            <a class="admin-link" href="/admin/payments">Open separate payment monitoring page</a>
+          </div>
+        </section>
+
+        <section class="surface admin-card">
+          <h2>User Management</h2>
+          <p>Update each user account and control who can log in as admin.</p>
+          <div class="admin-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="userTableBody">
+              {% for user in payload.users %}
+                <tr>
+                  <td>{{user.id}}</td>
+                  <td><input class="admin-input" id="user-name-{{user.id}}" value="{{user.name}}"></td>
+                  <td><input class="admin-input" id="user-email-{{user.id}}" value="{{user.email}}"></td>
+                  <td>
+                    <select class="admin-select" id="user-role-{{user.id}}">
+                      <option value="user" {% if (user.role or 'user') == 'user' and not user.is_admin %}selected{% endif %}>User</option>
+                      <option value="admin" {% if (user.role or '') == 'admin' or user.is_admin %}selected{% endif %}>Admin</option>
+                    </select>
+                  </td>
+                  <td>
+                    <select class="admin-select" id="user-active-{{user.id}}">
+                      <option value="1" {% if user.is_active %}selected{% endif %}>Active</option>
+                      <option value="0" {% if not user.is_active %}selected{% endif %}>Inactive</option>
+                    </select>
+                  </td>
+                  <td><button class="admin-btn" onclick="updateUser({{user.id}})">Save User</button></td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="surface admin-card">
+          <h2>Credential Management</h2>
+          <p>Activate credentials, assign them to users, or revoke approvals immediately.</p>
+          <div class="admin-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Credential</th>
+                  <th>Assigned Number</th>
+                  <th>SIP User</th>
+                  <th>Status</th>
+                  <th>Approved User</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="credentialTableBody">
+              {% for credential in payload.credentials %}
+                <tr>
+                  <td>{{credential.id}}</td>
+                  <td>{{credential.credential_id}}</td>
+                  <td>{{credential.assigned_number or "-"}}</td>
+                  <td>{{credential.sip_user or "-"}}</td>
+                  <td><span class="status-pill {% if credential.active %}status-active{% else %}status-inactive{% endif %}">{% if credential.active %}Active{% else %}Inactive{% endif %}</span></td>
+                  <td>
+                    <div class="inline-stack">
+                      <span>{{credential.approved_user_id or "-"}}</span>
+                      <input class="admin-input" id="credential-user-{{credential.id}}" placeholder="User ID to approve">
+                    </div>
+                  </td>
+                  <td>
+                    <div class="inline-stack">
+                      <select class="admin-select" id="credential-active-{{credential.id}}">
+                        <option value="1" {% if credential.active %}selected{% endif %}>Active</option>
+                        <option value="0" {% if not credential.active %}selected{% endif %}>Inactive</option>
+                      </select>
+                      <button class="admin-btn secondary" onclick="updateCredential({{credential.id}}, 'assign')">Save / Approve</button>
+                      <button class="admin-btn" onclick="updateCredential({{credential.id}}, 'revoke')">Revoke</button>
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="surface admin-card">
+          <h2>Realtime Support Inbox</h2>
+          <p>User-side support requests appear here as they are submitted from the application.</p>
+          <div class="admin-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>User</th>
+                  <th>Page</th>
+                  <th>Issue</th>
+                  <th>Expected Outcome</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody id="supportTableBody">
+              {% for item in payload.support_requests %}
+                <tr>
+                  <td>{{item.id}}</td>
+                  <td>{{item.user_name or "-"}}<br>{{item.user_email or "-"}}</td>
+                  <td>{{item.page_name}}</td>
+                  <td>{{item.issue}}{% if item.note %}<br><small>{{item.note}}</small>{% endif %}</td>
+                  <td>{{item.expected_outcome}}</td>
+                  <td>
+                    <select class="admin-select" id="support-status-{{item.id}}">
+                      <option value="open" {% if item.status == 'open' %}selected{% endif %}>Open</option>
+                      <option value="in_progress" {% if item.status == 'in_progress' %}selected{% endif %}>In Progress</option>
+                      <option value="resolved" {% if item.status == 'resolved' %}selected{% endif %}>Resolved</option>
+                      <option value="closed" {% if item.status == 'closed' %}selected{% endif %}>Closed</option>
+                    </select>
+                  </td>
+                  <td>{{item.created_at}}</td>
+                  <td><button class="admin-btn" onclick="updateSupport({{item.id}})">Save Ticket</button></td>
+                </tr>
+              {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="site-footer">
+        <span>All rights reserved 2026 SGI AIIOT Robotics</span>
+        <span>Made with love in India</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script>
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+async function updateUser(userId) {
+  const payload = {
+    name: document.getElementById(`user-name-${userId}`).value,
+    email: document.getElementById(`user-email-${userId}`).value,
+    role: document.getElementById(`user-role-${userId}`).value,
+    is_active: document.getElementById(`user-active-${userId}`).value === "1"
+  };
+  const res = await fetch(`/admin/user/${userId}/update`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (typeof window.showToast === "function") {
+    window.showToast(data.message || data.error || "User update finished.", res.ok ? "success" : "error");
+  }
+}
+
+async function updateCredential(credentialId, action) {
+  const approvedUserId = document.getElementById(`credential-user-${credentialId}`).value.trim();
+  const payload = {
+    action,
+    active: document.getElementById(`credential-active-${credentialId}`).value === "1",
+    approved_user_id: approvedUserId || null
+  };
+  const res = await fetch(`/admin/credential/${credentialId}/update`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (typeof window.showToast === "function") {
+    window.showToast(data.message || data.error || "Credential update finished.", res.ok ? "success" : "error");
+  }
+  if (res.ok) loadAdminData();
+}
+
+async function updateSupport(ticketId) {
+  const payload = {
+    status: document.getElementById(`support-status-${ticketId}`).value
+  };
+  const res = await fetch(`/admin/support/${ticketId}/update`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (typeof window.showToast === "function") {
+    window.showToast(data.message || data.error || "Support update finished.", res.ok ? "success" : "error");
+  }
+}
+
+async function createCredential() {
+  const payload = {
+    credential_id: document.getElementById("new-credential-id").value.trim(),
+    credential_password: document.getElementById("new-credential-password").value.trim(),
+    assigned_number: document.getElementById("new-assigned-number").value.trim(),
+    sip_user: document.getElementById("new-sip-user").value.trim(),
+    sip_pass: document.getElementById("new-sip-pass").value.trim(),
+    active: true
+  };
+  const res = await fetch("/admin/credential/create", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (typeof window.showToast === "function") {
+    window.showToast(data.message || data.error || "Credential create finished.", res.ok ? "success" : "error");
+  }
+  if (res.ok) {
+    ["new-credential-id","new-credential-password","new-assigned-number","new-sip-user","new-sip-pass"].forEach((id) => {
+      document.getElementById(id).value = "";
+    });
+    loadAdminData();
+  }
+}
+
+function renderUsers(users) {
+  const tbody = document.getElementById("userTableBody");
+  tbody.innerHTML = users.map((user) => `
+    <tr>
+      <td>${escapeHtml(user.id)}</td>
+      <td><input class="admin-input" id="user-name-${user.id}" value="${escapeHtml(user.name)}"></td>
+      <td><input class="admin-input" id="user-email-${user.id}" value="${escapeHtml(user.email)}"></td>
+      <td>
+        <select class="admin-select" id="user-role-${user.id}">
+          <option value="user" ${(user.role === "user" && !user.is_admin) ? "selected" : ""}>User</option>
+          <option value="admin" ${(user.role === "admin" || user.is_admin) ? "selected" : ""}>Admin</option>
+        </select>
+      </td>
+      <td>
+        <select class="admin-select" id="user-active-${user.id}">
+          <option value="1" ${user.is_active ? "selected" : ""}>Active</option>
+          <option value="0" ${!user.is_active ? "selected" : ""}>Inactive</option>
+        </select>
+      </td>
+      <td><button class="admin-btn" onclick="updateUser(${user.id})">Save User</button></td>
+    </tr>
+  `).join("");
+}
+
+function renderCredentials(credentials) {
+  const tbody = document.getElementById("credentialTableBody");
+  tbody.innerHTML = credentials.map((credential) => `
+    <tr>
+      <td>${escapeHtml(credential.id)}</td>
+      <td>${escapeHtml(credential.credential_id)}</td>
+      <td>${escapeHtml(credential.assigned_number || "-")}</td>
+      <td>${escapeHtml(credential.sip_user || "-")}</td>
+      <td><span class="status-pill ${credential.active ? "status-active" : "status-inactive"}">${credential.active ? "Active" : "Inactive"}</span></td>
+      <td>
+        <div class="inline-stack">
+          <span>${escapeHtml(credential.approved_user_id || "-")}</span>
+          <input class="admin-input" id="credential-user-${credential.id}" placeholder="User ID to approve">
+        </div>
+      </td>
+      <td>
+        <div class="inline-stack">
+          <select class="admin-select" id="credential-active-${credential.id}">
+            <option value="1" ${credential.active ? "selected" : ""}>Active</option>
+            <option value="0" ${!credential.active ? "selected" : ""}>Inactive</option>
+          </select>
+          <button class="admin-btn secondary" onclick="updateCredential(${credential.id}, 'assign')">Save / Approve</button>
+          <button class="admin-btn" onclick="updateCredential(${credential.id}, 'revoke')">Revoke</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function renderSupport(items) {
+  const tbody = document.getElementById("supportTableBody");
+  tbody.innerHTML = items.map((item) => `
+    <tr>
+      <td>${escapeHtml(item.id)}</td>
+      <td>${escapeHtml(item.user_name || "-")}<br>${escapeHtml(item.user_email || "-")}</td>
+      <td>${escapeHtml(item.page_name)}</td>
+      <td>${escapeHtml(item.issue)}${item.note ? `<br><small>${escapeHtml(item.note)}</small>` : ""}</td>
+      <td>${escapeHtml(item.expected_outcome)}</td>
+      <td>
+        <select class="admin-select" id="support-status-${item.id}">
+          <option value="open" ${item.status === "open" ? "selected" : ""}>Open</option>
+          <option value="in_progress" ${item.status === "in_progress" ? "selected" : ""}>In Progress</option>
+          <option value="resolved" ${item.status === "resolved" ? "selected" : ""}>Resolved</option>
+          <option value="closed" ${item.status === "closed" ? "selected" : ""}>Closed</option>
+        </select>
+      </td>
+      <td>${escapeHtml(item.created_at)}</td>
+      <td><button class="admin-btn" onclick="updateSupport(${item.id})">Save Ticket</button></td>
+    </tr>
+  `).join("");
+}
+
+async function loadAdminData() {
+  const res = await fetch("/admin/dashboard_data");
+  const data = await res.json();
+  if (!res.ok || !data.ok) return;
+  renderUsers(data.payload.users || []);
+  renderCredentials(data.payload.credentials || []);
+  renderSupport(data.payload.support_requests || []);
+}
+
+setInterval(loadAdminData, 8000);
+</script>
+<script src="{{ url_for('static', filename='app-shell.js') }}"></script>
+
+</body>
+</html>

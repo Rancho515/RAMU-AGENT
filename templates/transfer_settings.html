@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transfer Settings</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard-shell.css') }}">
+<style>
+.transfer-grid{display:grid;grid-template-columns:1.05fr .95fr;gap:22px;}
+.transfer-card{padding:24px;}
+.transfer-card h2{margin:0 0 8px;font-size:24px;}
+.transfer-card p{margin:0 0 18px;color:var(--shell-muted);line-height:1.6;}
+.field-label{display:block;margin:14px 0 8px;font-size:14px;color:#e5e7eb;}
+.field-input{
+width:100%;padding:14px 16px;border-radius:16px;border:1px solid rgba(255,255,255,0.08);
+background:rgba(8,8,8,0.9);color:var(--shell-text);font:inherit;
+}
+.toggle-row{
+margin-top:14px;padding:14px 16px;border-radius:16px;border:1px solid rgba(255,255,255,0.08);
+display:flex;justify-content:space-between;align-items:center;gap:16px;background:rgba(255,255,255,0.03);
+}
+.toggle-row label{margin:0;color:var(--shell-text);font-weight:700;}
+.toggle-row input{width:18px;height:18px;}
+.save-btn{
+margin-top:18px;padding:14px 16px;width:100%;border:none;border-radius:16px;
+background:linear-gradient(135deg,#ff9933,#1ea7ff);color:#050505;font-size:15px;font-weight:800;cursor:pointer;
+}
+.info-box{
+padding:16px 18px;border-radius:18px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);margin-top:14px;
+}
+.info-box span{display:block;font-size:12px;text-transform:uppercase;color:var(--shell-muted);margin-bottom:8px;}
+.status-chip{
+display:inline-flex;padding:8px 12px;border-radius:999px;font-size:12px;font-weight:800;
+background:rgba(255,153,51,0.12);color:#ffd29d;
+}
+.status-chip.active{background:rgba(34,169,90,0.12);color:#bbf7d0;}
+@media (max-width: 980px){.transfer-grid{grid-template-columns:1fr;}}
+</style>
+</head>
+<body data-support-page="settings">
+
+<div class="app-shell">
+  <aside class="app-sidebar">
+    <div class="brand-card">
+      <div class="brand-mark">
+        <div class="brand-lines"><span></span><span></span><span></span></div>
+      </div>
+      <div class="brand-copy">
+        <strong>SGI ROBOTIX</strong>
+        <small>AI voice agent and outbound campaign control panel</small>
+      </div>
+    </div>
+
+    <nav class="nav-links">
+      <a class="nav-link" href="/dashboard"><span class="nav-icon">&#8962;</span><span><span class="nav-label">Dashboard</span><span class="nav-sublabel">Live performance and health</span></span></a>
+      <a class="nav-link" href="/outbound"><span class="nav-icon">&#9742;</span><span><span class="nav-label">Outbound Calls</span><span class="nav-sublabel">Single and bulk call scheduling</span></span></a>
+      <a class="nav-link" href="/settings"><span class="nav-icon">&#9881;</span><span><span class="nav-label">Settings</span><span class="nav-sublabel">Credential approval and setup</span></span></a>
+      <a class="nav-link active" href="/transfer-settings"><span class="nav-icon">&#8644;</span><span><span class="nav-label">Transfer</span><span class="nav-sublabel">Human handoff routing</span></span></a>
+      <a class="nav-link" href="/call-detail-record"><span class="nav-icon">&#8377;</span><span><span class="nav-label">Call Detail Record</span><span class="nav-sublabel">Minutes, wallet and billing</span></span></a>
+    </nav>
+
+    <div class="sidebar-spacer"></div>
+
+    <div class="sidebar-footer">
+      <p>Use this page to decide exactly where the AI should send live transfers when a caller asks for a human agent.</p>
+      <a class="logout-link" href="/logout">Logout</a>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div class="content-shell">
+      <div class="page-hero">
+        <div>
+          <h1>Transfer Settings</h1>
+          <p>Choose the human number where live calls should be transferred whenever the customer asks to speak to a person or sales executive.</p>
+        </div>
+        <div class="hero-chip">Live handoff routing</div>
+      </div>
+
+      {% if message %}
+      <div class="page-banner {{message_type}}">{{message}}</div>
+      {% endif %}
+
+      <div class="transfer-grid">
+        <section class="surface transfer-card">
+          <h2>Transfer Number</h2>
+          <p>Enable live transfer and enter the destination mobile number with country code, for example `+9198XXXXXXXX`.</p>
+
+          <form method="POST">
+            <label class="field-label" for="transfer_number">Human Agent Number</label>
+            <input class="field-input" id="transfer_number" name="transfer_number" placeholder="+91XXXXXXXXXX" value="{{transfer_config.transfer_number or ''}}">
+
+            <div class="toggle-row">
+              <label for="is_enabled">Enable live transfer</label>
+              <input id="is_enabled" name="is_enabled" type="checkbox" {% if transfer_config.enabled %}checked{% endif %}>
+            </div>
+
+            <button class="save-btn" type="submit">Save Transfer Settings</button>
+          </form>
+        </section>
+
+        <section class="surface transfer-card">
+          <h2>Current Routing</h2>
+          <p>The AI agent will use your transfer number first. If transfer is disabled, it falls back to the approved credential assigned number.</p>
+
+          <div class="info-box">
+            <span>Transfer Status</span>
+            <strong class="status-chip {% if transfer_config.enabled %}active{% endif %}">
+              {% if transfer_config.enabled %}Enabled{% else %}Disabled{% endif %}
+            </strong>
+          </div>
+
+          <div class="info-box">
+            <span>Saved Transfer Number</span>
+            <strong>{{transfer_config.transfer_number or "Not set"}}</strong>
+          </div>
+
+          <div class="info-box">
+            <span>Approved Agent Assigned Number</span>
+            <strong>{{approved_agent.assigned_number if approved_agent else "No approved agent number yet"}}</strong>
+          </div>
+
+          <div class="info-box">
+            <span>How it works</span>
+            <strong>When caller says transfer to human agent, the system will try the saved transfer number first, then the approved assigned number.</strong>
+          </div>
+        </section>
+      </div>
+
+      <div class="site-footer">
+        <span>All rights reserved 2026 SGI AIIOT Robotics</span>
+        <span>Made with love in India</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='support-widget.js') }}"></script>
+<script src="{{ url_for('static', filename='app-shell.js') }}"></script>
+</body>
+</html>

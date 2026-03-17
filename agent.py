@@ -1,12 +1,12 @@
+import json
 import logging
 import os
-import json
 from urllib import error, request
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 from livekit import agents, api
-from livekit.agents import AgentSession, Agent, RoomInputOptions
-from livekit.plugins import openai, deepgram, noise_cancellation
+from livekit.agents import Agent, AgentSession, RoomInputOptions
+from livekit.plugins import cartesia, deepgram, noise_cancellation, openai
 
 load_dotenv(".env")
 load_dotenv(".env.local", override=True)
@@ -17,15 +17,107 @@ logger = logging.getLogger("outbound-agent")
 OUTBOUND_TRUNK_ID = os.getenv("OUTBOUND_TRUNK_ID")
 STATUS_ENDPOINT = os.getenv("STATUS_UPDATE_URL", "http://127.0.0.1:5000/internal/call_status")
 STATUS_TOKEN = os.getenv("STATUS_UPDATE_TOKEN", "secret123")
+OPENAI_TTS_VOICE = os.getenv("OPENAI_TTS_VOICE", "shimmer")
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "openai").strip().lower()
+CARTESIA_API_KEY = os.getenv("CARTESIA_API_KEY", "")
+CARTESIA_VOICE_ID = os.getenv("CARTESIA_VOICE_ID", "f786b574-daa5-4673-aa0c-cbe3e8534c02")
+
+OPENING_GREETING = (
+    "Hello sir, good afternoon. Main Riya bol rahi hu SGI Aiiot Robotics se. "
+    "Aapne shayad hamare smart energy meter ya industrial automation solutions mein interest dikhaya tha. "
+    "Kya abhi baat karne ke liye ek minute sahi rahega?"
+)
+
+FIRST_REPLY_INSTRUCTION = (
+    "Start speaking immediately after the call is answered. "
+    "Do not wait for the customer to speak first. "
+    "Use this exact opening in a warm, human, natural female voice: "
+    f"'{OPENING_GREETING}'"
+)
+
+AGENT_INSTRUCTIONS = """
+You are Riya, a warm and confident female caller from SGI Aiiot Robotics.
+
+Your job is to sound natural, polite, and human. The customer should feel like they are speaking to a real Indian female executive, not a robotic voice bot.
+
+Speaking rules:
+- Speak in smooth natural Hinglish.
+- Always use feminine phrasing like "bol rahi hu", "kar rahi hu", "bata rahi hu".
+- Never use masculine phrasing like "kar raha hu".
+- Keep sentences short and conversational.
+- Avoid sounding like a script reader.
+- Avoid long monologues.
+- Respond quickly and naturally.
+- Use a warm, calm, friendly sales tone.
+- Add light human fillers only when natural, like "ji", "bilkul", "achha", "samajh gayi".
+
+Opening behavior:
+- The moment the call is answered, start speaking first.
+- Do not wait for the user to say hello.
+- Keep the first greeting warm and short.
+
+What SGI offers:
+- Smart WiFi energy meters
+- Vision based machine security systems
+- Industrial IoT sensors
+- Machine monitoring dashboards
+
+WiFi Energy Meter:
+- Explain that it tracks electricity usage in real time.
+- Explain that users can see usage on mobile or dashboard.
+- Approximate price is around Rs 24,999.
+- Mention that final price can vary depending on installation and requirement.
+
+Other pricing:
+- Do not give exact pricing for other products.
+- Say pricing depends on requirement and the team can share a proper quotation.
+
+If the customer asks for human support, manager, callback, demo, or quotation:
+- Confirm politely.
+- Say that the SGI team will call them back shortly.
+
+If you need a moment:
+- Say only: "Ek second ji..."
+
+Ending style:
+- End warmly and briefly.
+- Example style: "Thank you sir, aapse baat karke achha laga. Hamari team aapse jaldi connect karegi."
+"""
+
+
+def normalize_phone(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    if raw.startswith("sip:"):
+        return raw
+    digits = "".join(ch for ch in raw if ch.isdigit() or ch == "+")
+    if digits and not digits.startswith("+"):
+        digits = f"+{digits}"
+    return digits
+
+
+def get_tts_provider():
+    if TTS_PROVIDER == "cartesia" and CARTESIA_API_KEY:
+        return cartesia.TTS(
+            api_key=CARTESIA_API_KEY,
+            model="sonic-3",
+            language="hi",
+            voice=CARTESIA_VOICE_ID,
+            speed=0.95,
+        )
+
+    return openai.TTS(
+        model="gpt-4o-mini-tts",
+        voice=OPENAI_TTS_VOICE,
+    )
 
 
 def push_status(call_id, status, message):
     if not call_id:
         return
 
-    payload = json.dumps(
-        {"call_id": call_id, "status": status, "message": message}
-    ).encode("utf-8")
+    payload = json.dumps({"call_id": call_id, "status": status, "message": message}).encode("utf-8")
     req = request.Request(
         STATUS_ENDPOINT,
         data=payload,
@@ -47,7 +139,7 @@ def classify_call_error(error_text):
     text = error_text.lower()
 
     if "no answer" in text or "no response" in text or "timeout" in text:
-        return "no_response", "Customer phone rang, but there was no response."
+        return "rejected", "Customer did not answer the scheduled call."
 
     if "busy" in text or "declined" in text or "rejected" in text:
         return "rejected", "Customer rejected or was busy on the call."
@@ -55,166 +147,16 @@ def classify_call_error(error_text):
     if "invalid" in text or "not found" in text or "malformed" in text:
         return "invalid", "Phone number looks invalid for outbound dialing."
 
-    return "failed", f"Call failed: {error_text}"
+    return "rejected", f"Scheduled call could not be completed: {error_text}"
 
-
-# -----------------------------
-# AI AGENT
-# -----------------------------
 
 class OutboundAssistant(Agent):
-
     def __init__(self):
+        super().__init__(instructions=AGENT_INSTRUCTIONS)
 
-        super().__init__(
-            instructions="""
-
-You are a FEMALE Indian AI voice caller from SGI Aiiot Robotics.
-
-Speak natural Hinglish (Hindi + English mix).
-
-Always speak like a FEMALE:
-• bol rahi hu
-• kar rahi hu
-• bata rahi hu
-• samjha rahi hu
-
-Never say "kar raha hu".
-
---------------------------------
-INTRODUCTION
-
-Hello, Good afternoon Sir,
-
-I am Riya calling from SGI Aiiot Robotics,
-
-Aapne shayad hamare smart WiFi based energy meter mein interest dikhaya tha.
-
-Hum smart energy meters, vision based machine security systems,
-industrial IoT sensors jaise temperature aur pressure sensors,
-aur machine monitoring dashboards provide karte hain.
-
-Agar aapko demo chahiye ya pricing details chahiye
-to main aapki help kar sakti hu.
-
---------------------------------
-PRODUCT DETAILS
-
-1️⃣ Smart WiFi Energy Meter
-
-Yeh ek smart device hai jo aapki electricity consumption
-real time mein monitor karta hai.
-
-Isse aap mobile ya dashboard se energy usage dekh sakte hain
-aur electricity cost control kar sakte hain.
-
-Approx price:
-
-₹24,999
-
-Lekin final price installation aur requirement ke
-hisab se thoda upar ya neeche ho sakta hai.
-
---------------------------------
-
-2️⃣ Vision Based Machine Security System
-
-Yeh AI based camera system hai jo machine monitoring,
-safety detection aur intrusion alerts provide karta hai.
-
---------------------------------
-
-3️⃣ Industrial IoT Sensors
-
-Jaise:
-
-• Temperature sensor
-• Pressure sensor
-• Machine monitoring sensors
-
-Yeh sensors industrial machines ka data collect karke
-dashboard par real time monitoring allow karte hain.
-
---------------------------------
-
-PRICING RULES
-
-If customer asks price for **WiFi Energy Meter**:
-
-Say:
-
-"Sir iska approx price 24,999 ke around hota hai,
-lekin installation aur requirement ke hisab se
-thoda vary kar sakta hai."
-
---------------------------------
-
-If customer asks price for **any other product**:
-
-Do NOT give price.
-
-Say:
-
-"Sir exact pricing requirement ke hisab se decide hoti hai.
-
-Main aapki details hamari team ko forward kar deti hu
-aur hamara representative aapse contact kar lega
-aur proper quotation share kar dega."
-
---------------------------------
-
-TRANSFER / HUMAN REQUEST
-
-If user asks to talk to manager or human say:
-
-"Ji sir main aapki request note kar rahi hu.
-
-Main aapki call details hamari team ko forward kar dungi
-aur hamara representative aapse jaldi contact karega."
-
---------------------------------
-
-THINKING
-
-If you need time say:
-
-"Ek second sir..."
-
-Then answer.
-
---------------------------------
-
-ENDING CALL
-
-When conversation finishes say:
-
-"Thank you sir.
-
-SGI Robotics ko time dene ke liye dhanyavaad.
-
-Aapka din shubh ho."
-
-Then politely end conversation.
-
---------------------------------
-
-STYLE
-
-• Friendly Indian female voice
-• Short answers
-• Natural Hinglish
-• Fast replies
-"""
-        )
-
-
-# -----------------------------
-# ENTRYPOINT
-# -----------------------------
 
 async def entrypoint(ctx: agents.JobContext):
-
-    logger.info(f"Connecting to room {ctx.room.name}")
+    logger.info("Connecting to room %s", ctx.room.name)
 
     phone_number = None
     call_id = None
@@ -224,33 +166,24 @@ async def entrypoint(ctx: agents.JobContext):
             data = json.loads(ctx.job.metadata)
             phone_number = data.get("phone_number")
             call_id = data.get("call_id")
-    except:
+    except Exception:
         logger.warning("No metadata")
 
     session = AgentSession(
-
         stt=deepgram.STT(
             model="nova-3",
-            language="hi"
+            language="hi",
         ),
-
         llm=openai.LLM(
             model="gpt-4o-mini",
-            temperature=0.3
+            temperature=0.2,
         ),
-
-        tts=openai.TTS(
-            model="gpt-4o-mini-tts",
-            voice="shimmer"
-        ),
+        tts=get_tts_provider(),
     )
 
     await session.start(
-
         room=ctx.room,
-
         agent=OutboundAssistant(),
-
         room_input_options=RoomInputOptions(
             noise_cancellation=noise_cancellation.BVCTelephony(),
             close_on_disconnect=True,
@@ -258,24 +191,16 @@ async def entrypoint(ctx: agents.JobContext):
     )
 
     if phone_number:
-
-        logger.info(f"Calling {phone_number}")
+        logger.info("Calling %s", phone_number)
         push_status(call_id, "ringing", "Phone is ringing. Waiting for customer to pick up.")
 
         try:
-
             await ctx.api.sip.create_sip_participant(
-
                 api.CreateSIPParticipantRequest(
-
                     room_name=ctx.room.name,
-
                     sip_trunk_id=OUTBOUND_TRUNK_ID,
-
                     sip_call_to=phone_number,
-
                     participant_identity=f"sip_{phone_number}",
-
                     wait_until_answered=True,
                 )
             )
@@ -283,39 +208,25 @@ async def entrypoint(ctx: agents.JobContext):
             logger.info("Call answered")
             push_status(call_id, "answered", "Call initiated successfully. Customer picked up.")
 
-            await session.generate_reply(
-                instructions="Introduce yourself politely."
-            )
+            await session.generate_reply(instructions=FIRST_REPLY_INSTRUCTION)
 
-        except Exception as e:
-
-            logger.error(f"Call failed {e}")
-            status, message = classify_call_error(str(e))
+        except Exception as exc:
+            logger.error("Call failed %s", exc)
+            status, message = classify_call_error(str(exc))
             push_status(call_id, status, message)
-
             ctx.shutdown()
 
     else:
-
         logger.info("Inbound call")
-
         await session.generate_reply(
-            instructions="Greet the caller politely."
+            instructions="Greet the caller immediately in a warm, natural, human female voice."
         )
 
 
-# -----------------------------
-# RUN AGENT
-# -----------------------------
-
 if __name__ == "__main__":
-
     agents.cli.run_app(
-
         agents.WorkerOptions(
-
             entrypoint_fnc=entrypoint,
-
-            agent_name="outbound-caller"
+            agent_name="outbound-caller",
         )
     )

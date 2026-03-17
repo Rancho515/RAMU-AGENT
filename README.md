@@ -95,6 +95,20 @@ uv run python agent.py start
 *   **Wait** until you see the message: `INFO:livekit.agents:registered worker ...`
 *   **Keep this terminal open.** This agent will listen for call requests.
 
+### Single-command runner
+
+If you want to run both the Flask app and the LiveKit agent together from one command, use:
+
+```powershell
+python run_all.py
+```
+
+On Render or other platforms that expect one start command, point the service to:
+
+```bash
+python run_all.py
+```
+
 ### Step 2: Make a Call
 
 Open a **separate** terminal window (keep the first one running) and run:

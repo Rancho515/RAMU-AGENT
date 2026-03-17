@@ -69,8 +69,8 @@ padding:12px 16px;
 width:100%;
 border:none;
 border-radius:12px;
-background:linear-gradient(135deg,#38bdf8,#0ea5e9);
-color:white;
+background:linear-gradient(135deg,#ff9933,#1ea7ff);
+color:#050505;
 font-size:16px;
 font-weight:700;
 cursor:pointer;
@@ -105,7 +105,7 @@ margin-top:16px;
 .info-box{
 padding:16px;
 border-radius:16px;
-background:rgba(8,16,31,0.72);
+background:rgba(5,5,5,0.62);
 border:1px solid rgba(148,163,184,0.12);
 }
 
@@ -127,9 +127,9 @@ word-break:break-word;
 margin-top:18px;
 padding:16px;
 border-radius:16px;
-background:rgba(56,189,248,0.08);
-border:1px solid rgba(56,189,248,0.18);
-color:#cbeafe;
+background:rgba(255,153,51,0.08);
+border:1px solid rgba(255,153,51,0.18);
+color:#ffedd5;
 line-height:1.6;
 }
 
@@ -159,35 +159,42 @@ grid-template-columns:1fr;
         </div>
       </div>
       <div class="brand-copy">
-        <strong>AI CALLER</strong>
-        <small>Smart outbound and inbound campaign control panel</small>
+        <strong>SGI ROBOTIX</strong>
+        <small>AI voice agent and outbound campaign control panel</small>
       </div>
     </div>
 
     <nav class="nav-links">
       <a class="nav-link" href="/dashboard">
-        <span class="nav-icon">01</span>
+        <span class="nav-icon">&#8962;</span>
         <span>
           <span class="nav-label">Dashboard</span>
           <span class="nav-sublabel">Live performance and health</span>
         </span>
       </a>
       <a class="nav-link" href="/outbound">
-        <span class="nav-icon">02</span>
+        <span class="nav-icon">&#9742;</span>
         <span>
           <span class="nav-label">Outbound Calls</span>
           <span class="nav-sublabel">Single and bulk call scheduling</span>
         </span>
       </a>
       <a class="nav-link active" href="/settings">
-        <span class="nav-icon">03</span>
+        <span class="nav-icon">&#9881;</span>
         <span>
           <span class="nav-label">Settings</span>
           <span class="nav-sublabel">Credential approval and setup</span>
         </span>
       </a>
+      <a class="nav-link" href="/transfer-settings">
+        <span class="nav-icon">&#8644;</span>
+        <span>
+          <span class="nav-label">Transfer</span>
+          <span class="nav-sublabel">Human handoff routing</span>
+        </span>
+      </a>
       <a class="nav-link" href="/call-detail-record">
-        <span class="nav-icon">04</span>
+        <span class="nav-icon">&#8377;</span>
         <span>
           <span class="nav-label">Call Detail Record</span>
           <span class="nav-sublabel">Minutes, wallet and billing</span>
@@ -215,6 +222,10 @@ grid-template-columns:1fr;
         </div>
       </div>
 
+      {% if message %}
+      <div class="page-banner {{message_type}}">{{message}}</div>
+      {% endif %}
+
       <div class="grid">
         <div class="surface card">
           <h2>Verify Agent Credential</h2>
@@ -229,10 +240,6 @@ grid-template-columns:1fr;
 
             <button type="submit">Approve This Account</button>
           </form>
-
-          {% if message %}
-          <div class="message {{message_type}}">{{message}}</div>
-          {% endif %}
 
           <div class="hint">
             After approval, this user can access outbound campaign features. If anything fails, use the WhatsApp support button and send the issue directly to support.
@@ -274,10 +281,16 @@ grid-template-columns:1fr;
           {% endif %}
         </div>
       </div>
+
+      <div class="site-footer">
+        <span>All rights reserved 2026 SGI AIIOT Robotics</span>
+        <span>Made with love in India</span>
+      </div>
     </div>
   </main>
 </div>
 
 <script src="{{ url_for('static', filename='support-widget.js') }}"></script>
+<script src="{{ url_for('static', filename='app-shell.js') }}"></script>
 </body>
 </html>

@@ -14,12 +14,12 @@ align-items:center;
 gap:16px;
 border-radius:22px;
 border:1px solid var(--shell-line);
-background:linear-gradient(135deg,rgba(16,32,61,0.94),rgba(20,36,63,0.72));
+background:linear-gradient(135deg,rgba(255,153,51,0.12),rgba(0,240,255,0.08));
 }
 
 .approval-banner.pending{
 border-color:rgba(245,158,11,0.28);
-background:linear-gradient(135deg,rgba(120,53,15,0.24),rgba(16,32,61,0.84));
+background:linear-gradient(135deg,rgba(120,53,15,0.28),rgba(19,19,19,0.94));
 }
 
 .approval-banner strong{
@@ -51,6 +51,7 @@ margin-bottom:22px;
 padding:20px;
 border-radius:22px;
 background:linear-gradient(180deg,rgba(16,32,61,0.94),rgba(13,24,48,0.86));
+background:linear-gradient(180deg,rgba(22,22,22,0.94),rgba(10,10,10,0.92));
 border:1px solid var(--shell-line);
 box-shadow:0 18px 42px rgba(2,6,23,0.3);
 }
@@ -187,7 +188,7 @@ margin-top:16px;
 .agent-item{
 padding:14px 16px;
 border-radius:16px;
-background:rgba(8,16,31,0.72);
+background:rgba(5,5,5,0.62);
 border:1px solid rgba(148,163,184,0.12);
 }
 
@@ -240,35 +241,42 @@ grid-template-columns:repeat(2,1fr);
         </div>
       </div>
       <div class="brand-copy">
-        <strong>AI CALLER</strong>
-        <small>Smart outbound and inbound campaign control panel</small>
+        <strong>SGI ROBOTIX</strong>
+        <small>AI voice agent and outbound campaign control panel</small>
       </div>
     </div>
 
     <nav class="nav-links">
       <a class="nav-link active" href="/dashboard">
-        <span class="nav-icon">01</span>
+        <span class="nav-icon">&#8962;</span>
         <span>
           <span class="nav-label">Dashboard</span>
           <span class="nav-sublabel">Live performance and health</span>
         </span>
       </a>
       <a class="nav-link" href="/outbound">
-        <span class="nav-icon">02</span>
+        <span class="nav-icon">&#9742;</span>
         <span>
           <span class="nav-label">Outbound Calls</span>
           <span class="nav-sublabel">Single and bulk call scheduling</span>
         </span>
       </a>
       <a class="nav-link" href="/settings">
-        <span class="nav-icon">03</span>
+        <span class="nav-icon">&#9881;</span>
         <span>
           <span class="nav-label">Settings</span>
           <span class="nav-sublabel">Credential approval and setup</span>
         </span>
       </a>
+      <a class="nav-link" href="/transfer-settings">
+        <span class="nav-icon">&#8644;</span>
+        <span>
+          <span class="nav-label">Transfer</span>
+          <span class="nav-sublabel">Human handoff routing</span>
+        </span>
+      </a>
       <a class="nav-link" href="/call-detail-record">
-        <span class="nav-icon">04</span>
+        <span class="nav-icon">&#8377;</span>
         <span>
           <span class="nav-label">Call Detail Record</span>
           <span class="nav-sublabel">Minutes, wallet and billing</span>
@@ -293,6 +301,10 @@ grid-template-columns:repeat(2,1fr);
         </div>
         <div class="hero-chip">Auto refresh every 4 seconds</div>
       </div>
+
+      {% if message %}
+      <div class="page-banner {{message_type}}">{{message}}</div>
+      {% endif %}
 
       <div id="approvalBanner" class="approval-banner {% if not payload.agent %}pending{% endif %}">
         <div>
@@ -383,11 +395,17 @@ grid-template-columns:repeat(2,1fr);
           </div>
         </div>
       </div>
+
+      <div class="site-footer">
+        <span>All rights reserved 2026 SGI AIIOT Robotics</span>
+        <span>Made with love in India</span>
+      </div>
     </div>
   </main>
 </div>
 
 <script src="{{ url_for('static', filename='support-widget.js') }}"></script>
+<script src="{{ url_for('static', filename='app-shell.js') }}"></script>
 <script>
 const callBody = document.getElementById("callBody");
 const approvalBanner = document.getElementById("approvalBanner");

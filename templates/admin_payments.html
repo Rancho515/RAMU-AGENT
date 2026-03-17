@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin Payments</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard-shell.css') }}">
+<style>
+.payments-card{padding:24px;}
+.payments-card h2{margin:0 0 8px;font-size:24px;}
+.payments-card p{margin:0;color:var(--shell-muted);}
+.payments-table-wrap{overflow:auto;margin-top:20px;}
+table{width:100%;border-collapse:collapse;}
+th,td{padding:14px 10px;text-align:left;border-bottom:1px solid rgba(255,153,51,0.1);}
+th{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:#cbd5e1;}
+.status-badge{display:inline-flex;padding:7px 11px;border-radius:999px;font-size:12px;font-weight:700;}
+.status-paid{background:rgba(34,169,90,0.12);color:#bbf7d0;}
+.status-pending{background:rgba(255,153,51,0.12);color:#ffcc8c;}
+.status-failed{background:rgba(239,68,68,0.12);color:#fecaca;}
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <aside class="app-sidebar">
+    <div class="brand-card">
+      <div class="brand-mark"><div class="brand-lines"><span></span><span></span><span></span></div></div>
+      <div class="brand-copy">
+        <strong>SGI ADMIN</strong>
+        <small>Users, credentials, support, and wallet transaction monitoring</small>
+      </div>
+    </div>
+    <nav class="nav-links">
+      <a class="nav-link" href="/admin/dashboard"><span class="nav-icon">&#8984;</span><span><span class="nav-label">Admin Dashboard</span><span class="nav-sublabel">Operations overview</span></span></a>
+      <a class="nav-link active" href="/admin/payments"><span class="nav-icon">&#8377;</span><span><span class="nav-label">Payments</span><span class="nav-sublabel">Recharge transaction history</span></span></a>
+      <a class="nav-link" href="/dashboard"><span class="nav-icon">&#9638;</span><span><span class="nav-label">User App</span><span class="nav-sublabel">Open agent-facing product</span></span></a>
+    </nav>
+    <div class="sidebar-spacer"></div>
+    <div class="sidebar-footer">
+      <p>Track all wallet recharge attempts separately from the main admin console.</p>
+      <a class="logout-link" href="/admin/logout">Admin Logout</a>
+    </div>
+  </aside>
+
+  <main class="app-main">
+    <div class="content-shell">
+      <div class="page-hero">
+        <div>
+          <h1>Payment Monitoring</h1>
+          <p>View every wallet recharge transaction separately with user mapping, payment references, statuses, and gateway details.</p>
+        </div>
+        <div class="hero-chip">Refresh every 10 seconds</div>
+      </div>
+
+      {% if message %}
+      <div class="page-banner {{message_type}}">{{message}}</div>
+      {% endif %}
+
+      <section class="surface payments-card">
+        <h2>Wallet Transactions</h2>
+        <p>Only verified `paid` transactions are credited to wallet. `pending` and `failed` items stay visible for audit and support handling.</p>
+        <div class="payments-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>User</th>
+                <th>Reference</th>
+                <th>Amount</th>
+                <th>Type</th>
+                <th>Status</th>
+                <th>Gateway Link</th>
+                <th>Gateway Payment</th>
+                <th>Created</th>
+                <th>Paid At</th>
+              </tr>
+            </thead>
+            <tbody id="paymentsBody">
+            {% for row in payload.transactions %}
+              <tr>
+                <td>{{row.id}}</td>
+                <td>{{row.user_name or "-"}}<br>{{row.user_email or "-"}}</td>
+                <td>{{row.payment_reference}}</td>
+                <td>Rs {{row.amount}}</td>
+                <td>{{row.transaction_type}}</td>
+                <td><span class="status-badge status-{{row.payment_status}}">{{row.payment_status}}</span></td>
+                <td>{{row.gateway_link_id or "-"}}</td>
+                <td>{{row.gateway_payment_id or "-"}}</td>
+                <td>{{row.created_at}}</td>
+                <td>{{row.paid_at or "-"}}</td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="site-footer">
+        <span>All rights reserved 2026 SGI AIIOT Robotics</span>
+        <span>Made with love in India</span>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='app-shell.js') }}"></script>
+<script>
+function escapeHtml(value) {
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function renderPayments(rows) {
+  const body = document.getElementById("paymentsBody");
+  body.innerHTML = rows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.id)}</td>
+      <td>${escapeHtml(row.user_name || "-")}<br>${escapeHtml(row.user_email || "-")}</td>
+      <td>${escapeHtml(row.payment_reference)}</td>
+      <td>Rs ${escapeHtml(row.amount)}</td>
+      <td>${escapeHtml(row.transaction_type)}</td>
+      <td><span class="status-badge status-${escapeHtml(row.payment_status)}">${escapeHtml(row.payment_status)}</span></td>
+      <td>${escapeHtml(row.gateway_link_id || "-")}</td>
+      <td>${escapeHtml(row.gateway_payment_id || "-")}</td>
+      <td>${escapeHtml(row.created_at)}</td>
+      <td>${escapeHtml(row.paid_at || "-")}</td>
+    </tr>
+  `).join("");
+}
+
+async function loadPayments() {
+  const res = await fetch("/admin/payments_data");
+  const data = await res.json();
+  if (!res.ok || !data.ok) return;
+  renderPayments(data.payload.transactions || []);
+}
+
+setInterval(loadPayments, 10000);
+</script>
+</body>
+</html>

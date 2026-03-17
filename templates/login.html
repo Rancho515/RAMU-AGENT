@@ -1,80 +1,67 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agent Login</title>
-<style>
-body{
-font-family:Arial;
-background:#0f172a;
-display:flex;
-align-items:center;
-justify-content:center;
-height:100vh;
-margin:0;
-color:white;
-}
-
-.card{
-background:#1e293b;
-padding:40px;
-border-radius:10px;
-width:320px;
-text-align:center;
-box-shadow:0 10px 30px rgba(0,0,0,0.5);
-}
-
-input{
-width:100%;
-padding:10px;
-margin:8px 0;
-border:none;
-border-radius:6px;
-}
-
-button{
-width:100%;
-padding:10px;
-background:#38bdf8;
-border:none;
-border-radius:6px;
-color:white;
-font-size:16px;
-cursor:pointer;
-}
-
-button:hover{
-background:#0ea5e9;
-}
-
-a{
-color:#38bdf8;
-text-decoration:none;
-}
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='dashboard-shell.css') }}">
 </head>
-
 <body>
 
-<div class="card">
+<div class="auth-shell">
+  <div class="auth-layout">
+    <section class="auth-showcase">
+      <div class="auth-kicker">SGI AIIOT Robotics</div>
+      <h1>AI Voice Agent Control Centre</h1>
+      <p>Manage approvals, outbound campaigns, call records, and wallet recharge tracking from a polished operations workspace inspired by the visual language of agent.sgiaiiotrobotics.com.</p>
 
-<h2>AI Agent Login</h2>
+      <div class="auth-points">
+        <div class="auth-point">
+          <strong>Software-grade workspace</strong>
+          Premium control experience for AI calling, wallet operations, and agent approvals.
+        </div>
+        <div class="auth-point">
+          <strong>Built for agents</strong>
+          Faster login flow, cleaner forms, and easier payment tracking for wallet recharge operations.
+        </div>
+        <div class="auth-point">
+          <strong>Made like a product</strong>
+          Start campaigns, review billing, and confirm approved credentials from one premium control layer.
+        </div>
+      </div>
+    </section>
 
-<form method="POST">
+    <section class="auth-card">
+      <h2>Welcome back</h2>
+      <p>Login to continue to your SGI AI voice agent dashboard.</p>
 
-<input type="email" name="email" placeholder="Email" required>
+      {% if message %}
+      <div class="auth-message {{message_type or 'error'}}">{{message}}</div>
+      {% endif %}
 
-<input type="password" name="password" placeholder="Password" required>
+      <form method="POST">
+        <label for="email">Email Address</label>
+        <input id="email" type="email" name="email" placeholder="Enter your email" required>
 
-<button type="submit">Login</button>
+        <label for="password">Password</label>
+        <input id="password" type="password" name="password" placeholder="Enter your password" required>
 
-</form>
+        <button type="submit">Login to Dashboard</button>
+      </form>
 
-<p style="margin-top:15px;">
-New user? <a href="/register">Register</a>
-</p>
+      <div class="auth-links">
+        New user? <a href="/register">Create an account</a><br>
+        Admin? <a href="/admin/login">Open admin login</a>
+      </div>
 
+      <div class="auth-footer">
+        <span>All rights reserved 2026 SGI AIIOT Robotics</span>
+        <span>Made with love in India</span>
+      </div>
+    </section>
+  </div>
 </div>
 
+<script src="{{ url_for('static', filename='app-shell.js') }}"></script>
 </body>
 </html>

@@ -110,7 +110,24 @@
     panel.classList.remove("open");
   });
 
-  send.addEventListener("click", function () {
+  send.addEventListener("click", async function () {
+    const payload = {
+      page_name: pageName,
+      issue: issueSelect.value,
+      expected_outcome: outcomeSelect.value,
+      note: noteField.value.trim()
+    };
+
+    try {
+      await fetch("/support_request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    } catch (err) {
+      // Keep WhatsApp fallback even if internal support logging fails.
+    }
+
     const message = encodeURIComponent(buildMessage());
     window.open(`https://wa.me/${SUPPORT_NUMBER}?text=${message}`, "_blank");
   });

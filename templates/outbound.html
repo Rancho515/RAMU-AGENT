@@ -14,12 +14,12 @@ align-items:center;
 gap:16px;
 border-radius:22px;
 border:1px solid var(--shell-line);
-background:linear-gradient(135deg,rgba(16,32,61,0.94),rgba(20,36,63,0.72));
+background:linear-gradient(135deg,rgba(255,153,51,0.12),rgba(0,240,255,0.08));
 }
 
 .approval.pending{
 border-color:rgba(245,158,11,0.3);
-background:linear-gradient(135deg,rgba(120,53,15,0.24),rgba(16,32,61,0.82));
+background:linear-gradient(135deg,rgba(120,53,15,0.28),rgba(19,19,19,0.94));
 }
 
 .approval strong{
@@ -88,15 +88,16 @@ padding:12px 16px;
 width:100%;
 border:none;
 border-radius:12px;
-background:linear-gradient(135deg,#38bdf8,#0ea5e9);
-color:white;
+background:linear-gradient(135deg,#ff9933,#1ea7ff);
+color:#050505;
 font-size:15px;
 font-weight:700;
 cursor:pointer;
 }
 
 .secondary-btn{
-background:linear-gradient(135deg,#22c55e,#16a34a);
+background:linear-gradient(135deg,#22a95a,#1ea7ff);
+color:#03130b;
 }
 
 .feedback{
@@ -118,7 +119,7 @@ color:#fecaca;
 margin-top:16px;
 padding:16px;
 border-radius:16px;
-background:rgba(8,16,31,0.74);
+background:rgba(5,5,5,0.62);
 border:1px solid rgba(148,163,184,0.12);
 }
 
@@ -252,35 +253,42 @@ align-items:flex-start;
         </div>
       </div>
       <div class="brand-copy">
-        <strong>AI CALLER</strong>
-        <small>Smart outbound and inbound campaign control panel</small>
+        <strong>SGI ROBOTIX</strong>
+        <small>AI voice agent and outbound campaign control panel</small>
       </div>
     </div>
 
     <nav class="nav-links">
       <a class="nav-link" href="/dashboard">
-        <span class="nav-icon">01</span>
+        <span class="nav-icon">&#8962;</span>
         <span>
           <span class="nav-label">Dashboard</span>
           <span class="nav-sublabel">Live performance and health</span>
         </span>
       </a>
       <a class="nav-link active" href="/outbound">
-        <span class="nav-icon">02</span>
+        <span class="nav-icon">&#9742;</span>
         <span>
           <span class="nav-label">Outbound Calls</span>
           <span class="nav-sublabel">Single and bulk call scheduling</span>
         </span>
       </a>
       <a class="nav-link" href="/settings">
-        <span class="nav-icon">03</span>
+        <span class="nav-icon">&#9881;</span>
         <span>
           <span class="nav-label">Settings</span>
           <span class="nav-sublabel">Credential approval and setup</span>
         </span>
       </a>
+      <a class="nav-link" href="/transfer-settings">
+        <span class="nav-icon">&#8644;</span>
+        <span>
+          <span class="nav-label">Transfer</span>
+          <span class="nav-sublabel">Human handoff routing</span>
+        </span>
+      </a>
       <a class="nav-link" href="/call-detail-record">
-        <span class="nav-icon">04</span>
+        <span class="nav-icon">&#8377;</span>
         <span>
           <span class="nav-label">Call Detail Record</span>
           <span class="nav-sublabel">Minutes, wallet and billing</span>
@@ -305,6 +313,10 @@ align-items:flex-start;
         </div>
         <div class="hero-chip">Realtime refresh every 3 seconds</div>
       </div>
+
+      {% if message %}
+      <div class="page-banner {{message_type}}">{{message}}</div>
+      {% endif %}
 
       <div class="approval {% if not approved_agent %}pending{% endif %}">
         <div>
@@ -385,11 +397,17 @@ Rohan Mehta, +919999888777, 2026-03-15 16:00</code>
           </table>
         </div>
       </div>
+
+      <div class="site-footer">
+        <span>All rights reserved 2026 SGI AIIOT Robotics</span>
+        <span>Made with love in India</span>
+      </div>
     </div>
   </main>
 </div>
 
 <script src="{{ url_for('static', filename='support-widget.js') }}"></script>
+<script src="{{ url_for('static', filename='app-shell.js') }}"></script>
 <script>
 const bodyEl = document.getElementById("callBody");
 const feedbackEl = document.getElementById("feedback");
@@ -426,6 +444,9 @@ function statusLabel(status) {
 function setFeedback(element, message, type) {
   element.textContent = message || "";
   element.className = "feedback" + (type ? ` ${type}` : "");
+  if (message && typeof window.showToast === "function" && type) {
+    window.showToast(message, type);
+  }
 }
 
 async function scheduleCall(event) {
